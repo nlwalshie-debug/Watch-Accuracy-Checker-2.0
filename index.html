@@ -17,7 +17,7 @@
   
   .header { text-align:center; margin-bottom:30px; }
   .header h1 { font-family:'Bebas Neue'; font-size:2.5rem; letter-spacing:2px; color:var(--accent); }
-  .header p { color:var(--blue); font-size:0.7rem; font-weight:bold; }
+  .header p { color:var(--blue); font-size:0.7rem; font-weight:bold; text-transform:uppercase; }
 
   .card { background:var(--surface); border:1px solid var(--border); border-radius:14px; width:100%; max-width:500px; padding:25px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
   
@@ -33,12 +33,12 @@
   #webcam { width:100%; height:100%; object-fit:cover; position:absolute; }
   
   .scanner-gui {
-    position:relative; width:300px; height:150px; border:2px solid var(--blue);
-    border-radius:12px; box-shadow:0 0 0 9999px rgba(0,0,0,0.7);
+    position:relative; width:320px; height:160px; border:3px solid var(--blue);
+    border-radius:12px; box-shadow:0 0 0 9999px rgba(0,0,0,0.75);
     display:flex; align-items:center; justify-content:center;
   }
   .scanner-line {
-    position:absolute; width:100%; height:2px; background:var(--blue);
+    position:absolute; width:100%; height:3px; background:var(--blue);
     box-shadow: 0 0 15px var(--blue); top:0; animation: scan 2s infinite linear;
   }
   @keyframes scan { 0% {top:0} 100% {top:100%} }
@@ -51,14 +51,12 @@
 
 <div class="header">
   <h1>WATCH ACCURACY PRO</h1>
-  <p>GEMINI VISION SYNC ENGINE v2.0</p>
+  <p>Gemini Vision Engine • Active</p>
 </div>
 
 <div class="card">
   <button class="btn btn-vision" onclick="startVision()">📷 VISION SYNC</button>
-  <p style="text-align:center; font-size:0.8rem; color:var(--muted); margin-top:10px;">
-    Point camera at your G-Shock display to sync instantly.
-  </p>
+  <div id="results-log" style="margin-top:10px; font-family:'Share Tech Mono'; color:var(--green); font-size:0.9rem; text-align:center;"></div>
 </div>
 
 <div id="vision-overlay">
@@ -66,7 +64,7 @@
   
   <div class="scanner-gui">
     <div class="scanner-line"></div>
-    <p style="color:var(--blue); font-family:'Share Tech Mono'; position:absolute; top:-30px; font-size:0.7rem;">ALIGN WATCH DISPLAY HERE</p>
+    <p style="color:var(--blue); font-family:'Share Tech Mono'; position:absolute; top:-35px; font-size:0.8rem; letter-spacing:1px;">ALIGN DIGITAL TIME HERE</p>
   </div>
 
   <div class="controls">
@@ -84,12 +82,13 @@ async function startVision() {
   const overlay = document.getElementById('vision-overlay');
   overlay.style.display = 'flex';
   try {
+    // requesting 1080p for better OCR detail
     stream = await navigator.mediaDevices.getUserMedia({ 
-      video: { facingMode: "environment", focusMode: "continuous" } 
+      video: { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 } } 
     });
     document.getElementById('webcam').srcObject = stream;
   } catch (err) {
-    alert("Camera Error: Please ensure you are using HTTPS and have granted permissions.");
+    alert("Camera Access Denied. Please check your browser settings.");
     stopVision();
   }
 }
@@ -105,39 +104,49 @@ async function takeSnapshot() {
   const btn = document.getElementById('snap-btn');
   const ctx = canvas.getContext('2d');
   
-  // 1. Precise Atomic Timestamp at moment of capture
-  const atomicNow = new Date(); 
+  // Capturing reference time at the instant of the click
+  const atomicRef = new Date(); 
 
-  // 2. G-Shock LCD Filter (Boost contrast to make segments pop)
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
-  ctx.filter = "contrast(160%) grayscale(100%) brightness(110%)";
-  ctx.drawImage(video, 0, 0);
+  // Crop & Filter for G-Shock LCD
+  // We take the center 50% of the video to match our UI box
+  canvas.width = 640;
+  canvas.height = 320;
   
-  btn.innerText = "ANALYZING...";
-  btn.style.background = "#444";
+  ctx.filter = "contrast(180%) grayscale(100%) brightness(105%)";
+  // Draw only the center part of the video onto the canvas for the AI
+  ctx.drawImage(video, video.videoWidth/4, video.videoHeight/4, video.videoWidth/2, video.videoHeight/2, 0, 0, 640, 320);
+  
+  btn.innerText = "READING...";
+  btn.disabled = true;
 
-  // 3. Tesseract AI Recognition
   try {
     const worker = await Tesseract.createWorker();
     await worker.loadLanguage('eng');
     await worker.initialize('eng');
-    // Tell AI to only look for digits and colons
     await worker.setParameters({
       tessedit_char_whitelist: '0123456789:', 
-      tessedit_pageseg_mode: '7' // Treat as single line
+      tessedit_pageseg_mode: '7' 
     });
 
     const { data: { text } } = await worker.recognize(canvas);
     await worker.terminate();
 
-    const cleanText = text.trim();
-    const timeMatch = cleanText.match(/\d{1,2}:\d{2}:\d{2}/);
+    const foundTime = text.replace(/\s/g, '').match(/\d{1,2}:\d{2}:\d{2}/);
 
-    if(timeMatch) {
-      const watchTime = timeMatch[0];
-      const atomicTime = atomicNow.toLocaleTimeString();
-      alert(`SYNC SUCCESSFUL!\n\nWatch Readout: ${watchTime}\nAtomic Ref: ${atomicTime}\n\nYour G-Shock is logged!`);
+    if(foundTime) {
+      const log = document.getElementById('results-log');
+      log.innerHTML = `SUCCESS: Read ${foundTime[0]}<br>Atomic Ref: ${atomicRef.toLocaleTimeString()}`;
       stopVision();
     } else {
-      alert("READ ERROR: The AI couldn't
+      alert("COULDN'T RESOLVE DIGITS\n\n1. Ensure watch is upright\n2. Minimize glare on the glass\n3. Try a different angle");
+    }
+  } catch (e) {
+    alert("System Error: " + e.message);
+  } finally {
+    btn.innerText = "CAPTURE TIME";
+    btn.disabled = false;
+  }
+}
+</script>
+</body>
+</html>
