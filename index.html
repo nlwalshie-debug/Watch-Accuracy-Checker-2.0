@@ -1,55 +1,143 @@
-async function captureAndProcess() {
-  const video = document.getElementById('vision-feed');
-  const canvas = document.getElementById('ocr-canvas');
-  const ctx = canvas.getContext('2d');
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Watch Accuracy Pro</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Share+Tech+Mono&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/tesseract.js@v4.0.1/dist/tesseract.min.js"></script>
+<style>
+  :root {
+    --bg: #0a0c0f; --surface: #111418; --border: #1e2530;
+    --accent: #c8a96e; --red: #e05252; --green: #52c0a0; --blue: #7ab8e0;
+    --text: #e8e0d0;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:var(--bg); color:var(--text); font-family:'DM Sans',sans-serif; padding:20px; display:flex; flex-direction:column; align-items:center; }
   
-  // 1. Capture the EXACT moment you hit the button
-  const atomicCaptureTime = new Date(); 
+  .header { text-align:center; margin-bottom:30px; }
+  .header h1 { font-family:'Bebas Neue'; font-size:2.5rem; letter-spacing:2px; color:var(--accent); }
+  .header p { color:var(--blue); font-size:0.7rem; font-weight:bold; }
 
-  // 2. G-SHOCK OPTIMIZATION: High contrast & Grayscale
-  // This makes the grey LCD background white and the black segments jet black
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
-  ctx.filter = "contrast(160%) grayscale(100%) brightness(110%)"; 
-  ctx.drawImage(video, 0, 0);
+  .card { background:var(--surface); border:1px solid var(--border); border-radius:14px; width:100%; max-width:500px; padding:25px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
   
-  document.getElementById('capture-btn').innerText = "READING...";
+  .btn { width:100%; padding:18px; border-radius:10px; border:none; cursor:pointer; font-family:'Bebas Neue'; font-size:1.2rem; margin-bottom:15px; transition: 0.2s; text-transform:uppercase; letter-spacing:1px; }
+  .btn:active { transform: scale(0.97); }
+  .btn-vision { background:var(--blue); color:black; }
   
-  // 3. Digital Digit Whitelist
-  // We tell the AI: "Ignore everything except 0-9 and the colon"
-  const worker = await Tesseract.createWorker();
-  await worker.loadLanguage('eng');
-  await worker.initialize('eng');
-  await worker.setParameters({
-    tessedit_char_whitelist: '0123456789:', 
-  });
+  /* Vision UI Overlay */
+  #vision-overlay {
+    display:none; position:fixed; inset:0; background:black; z-index:9999;
+    flex-direction:column; align-items:center; justify-content:center;
+  }
+  #webcam { width:100%; height:100%; object-fit:cover; position:absolute; }
+  
+  .scanner-gui {
+    position:relative; width:300px; height:150px; border:2px solid var(--blue);
+    border-radius:12px; box-shadow:0 0 0 9999px rgba(0,0,0,0.7);
+    display:flex; align-items:center; justify-content:center;
+  }
+  .scanner-line {
+    position:absolute; width:100%; height:2px; background:var(--blue);
+    box-shadow: 0 0 15px var(--blue); top:0; animation: scan 2s infinite linear;
+  }
+  @keyframes scan { 0% {top:0} 100% {top:100%} }
 
-  const { data: { text } } = await worker.recognize(canvas);
-  await worker.terminate();
+  .controls { position:absolute; bottom:40px; width:90%; display:flex; gap:15px; }
+  #hidden-canvas { display:none; }
+</style>
+</head>
+<body>
 
-  // Clean up the text (remove spaces/newlines)
-  const cleanText = text.replace(/\s/g, '');
-  const timeMatch = cleanText.match(/\d{1,2}:\d{2}:\d{2}/);
+<div class="header">
+  <h1>WATCH ACCURACY PRO</h1>
+  <p>GEMINI VISION SYNC ENGINE v2.0</p>
+</div>
+
+<div class="card">
+  <button class="btn btn-vision" onclick="startVision()">📷 VISION SYNC</button>
+  <p style="text-align:center; font-size:0.8rem; color:var(--muted); margin-top:10px;">
+    Point camera at your G-Shock display to sync instantly.
+  </p>
+</div>
+
+<div id="vision-overlay">
+  <video id="webcam" autoplay playsinline></video>
   
-  if (timeMatch) {
-     // SUCCESS: Calculate the difference between watch and atomic time
-     const watchSeconds = parseTimeToSeconds(timeMatch[0]);
-     const atomicSeconds = (atomicCaptureTime.getHours() * 3600) + 
-                           (atomicCaptureTime.getMinutes() * 60) + 
-                           atomicCaptureTime.getSeconds();
-     
-     const diff = watchSeconds - atomicSeconds;
-     
-     alert(`SUCCESS!\nWatch: ${timeMatch[0]}\nAtomic: ${atomicCaptureTime.toLocaleTimeString()}\nOffset: ${diff}s`);
-     closeVisionScanner();
-  } else {
-     alert("STILL BLURRY: Try tilting the watch to avoid glare, or hold it 6 inches away from the lens.");
-     document.getElementById('capture-btn').innerText = "CAPTURE TIME";
+  <div class="scanner-gui">
+    <div class="scanner-line"></div>
+    <p style="color:var(--blue); font-family:'Share Tech Mono'; position:absolute; top:-30px; font-size:0.7rem;">ALIGN WATCH DISPLAY HERE</p>
+  </div>
+
+  <div class="controls">
+    <button class="btn" style="background:#222; color:white;" onclick="stopVision()">CANCEL</button>
+    <button id="snap-btn" class="btn" style="background:var(--green); color:black;" onclick="takeSnapshot()">CAPTURE TIME</button>
+  </div>
+  
+  <canvas id="hidden-canvas"></canvas>
+</div>
+
+<script>
+let stream = null;
+
+async function startVision() {
+  const overlay = document.getElementById('vision-overlay');
+  overlay.style.display = 'flex';
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ 
+      video: { facingMode: "environment", focusMode: "continuous" } 
+    });
+    document.getElementById('webcam').srcObject = stream;
+  } catch (err) {
+    alert("Camera Error: Please ensure you are using HTTPS and have granted permissions.");
+    stopVision();
   }
 }
 
-// Helper to turn HH:MM:SS into total seconds
-function parseTimeToSeconds(t) {
-  const [h, m, s] = t.split(':').map(Number);
-  return (h * 3600) + (m * 60) + s;
+function stopVision() {
+  if(stream) stream.getTracks().forEach(t => t.stop());
+  document.getElementById('vision-overlay').style.display = 'none';
 }
+
+async function takeSnapshot() {
+  const video = document.getElementById('webcam');
+  const canvas = document.getElementById('hidden-canvas');
+  const btn = document.getElementById('snap-btn');
+  const ctx = canvas.getContext('2d');
+  
+  // 1. Precise Atomic Timestamp at moment of capture
+  const atomicNow = new Date(); 
+
+  // 2. G-Shock LCD Filter (Boost contrast to make segments pop)
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  ctx.filter = "contrast(160%) grayscale(100%) brightness(110%)";
+  ctx.drawImage(video, 0, 0);
+  
+  btn.innerText = "ANALYZING...";
+  btn.style.background = "#444";
+
+  // 3. Tesseract AI Recognition
+  try {
+    const worker = await Tesseract.createWorker();
+    await worker.loadLanguage('eng');
+    await worker.initialize('eng');
+    // Tell AI to only look for digits and colons
+    await worker.setParameters({
+      tessedit_char_whitelist: '0123456789:', 
+      tessedit_pageseg_mode: '7' // Treat as single line
+    });
+
+    const { data: { text } } = await worker.recognize(canvas);
+    await worker.terminate();
+
+    const cleanText = text.trim();
+    const timeMatch = cleanText.match(/\d{1,2}:\d{2}:\d{2}/);
+
+    if(timeMatch) {
+      const watchTime = timeMatch[0];
+      const atomicTime = atomicNow.toLocaleTimeString();
+      alert(`SYNC SUCCESSFUL!\n\nWatch Readout: ${watchTime}\nAtomic Ref: ${atomicTime}\n\nYour G-Shock is logged!`);
+      stopVision();
+    } else {
+      alert("READ ERROR: The AI couldn't
