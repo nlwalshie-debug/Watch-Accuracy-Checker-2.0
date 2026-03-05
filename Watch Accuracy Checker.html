@@ -1,0 +1,1919 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Watch Accuracy Checker</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Share+Tech+Mono&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0c0f; --surface: #111418; --border: #1e2530;
+    --accent: #c8a96e; --accent-dim: #7a6540;
+    --red: #e05252; --green: #52c0a0; --blue: #7ab8e0;
+    --text: #e8e0d0; --muted: #6b7280;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    background:var(--bg); color:var(--text); font-family:'DM Sans',sans-serif;
+    min-height:100vh; display:flex; flex-direction:column; align-items:center;
+    padding:24px 16px 56px; overflow-x:hidden;
+  }
+  body::before {
+    content:''; position:fixed; inset:0; pointer-events:none;
+    background-image:linear-gradient(rgba(200,169,110,0.03) 1px,transparent 1px),
+      linear-gradient(90deg,rgba(200,169,110,0.03) 1px,transparent 1px);
+    background-size:40px 40px;
+  }
+  header { text-align:center; margin-bottom:24px; animation:fadeDown 0.6s ease both; }
+  .logo { font-family:'Bebas Neue',sans-serif; font-size:clamp(12px,3vw,15px); letter-spacing:0.35em; color:var(--accent); margin-bottom:4px; }
+  h1 { font-family:'Bebas Neue',sans-serif; font-size:clamp(26px,7vw,38px); letter-spacing:0.12em; color:var(--text); line-height:1; }
+
+  .card { background:var(--surface); border:1px solid var(--border); border-radius:14px; width:100%; max-width:520px; margin-bottom:16px; }
+  .panel-label { font-size:10px; letter-spacing:0.2em; color:var(--muted); text-transform:uppercase; margin-bottom:10px; }
+
+  /* ---- Clock ---- */
+  .clock-card { padding:26px 36px 22px; text-align:center; position:relative; animation:fadeUp 0.5s 0.05s ease both; }
+  .clock-card::after { content:''; position:absolute; inset:-1px; border-radius:14px; background:linear-gradient(135deg,rgba(200,169,110,0.12),transparent 55%); pointer-events:none; }
+  .sync-badge { display:inline-flex; align-items:center; gap:6px; font-size:11px; letter-spacing:0.13em; color:var(--muted); text-transform:uppercase; margin-bottom:14px; cursor:pointer; transition:color 0.2s; }
+  .sync-badge:hover { color:var(--accent); }
+  .sync-dot { width:7px; height:7px; border-radius:50%; background:var(--green); animation:pulse 2s infinite; flex-shrink:0; }
+  .sync-dot.syncing { background:var(--accent); animation:spin-pulse 0.8s linear infinite; }
+  .sync-dot.error { background:var(--red); animation:none; }
+  .time-display { font-family:'Share Tech Mono',monospace; font-size:clamp(50px,13vw,84px); letter-spacing:0.04em; color:var(--text); line-height:1; margin-bottom:5px; }
+  .date-display { font-size:12px; letter-spacing:0.1em; color:var(--muted); text-transform:uppercase; }
+  .ms-bar { height:3px; background:var(--border); border-radius:2px; overflow:hidden; margin:11px auto 0; width:80%; }
+  .ms-fill { height:100%; background:linear-gradient(90deg,var(--accent-dim),var(--accent)); border-radius:2px; transition:width 0.05s linear; }
+  .ms-label { font-family:'Share Tech Mono',monospace; font-size:10px; color:var(--accent-dim); margin-top:4px; letter-spacing:0.1em; }
+
+  /* ---- Watch selector ---- */
+  .watch-selector-card { padding:16px 18px; animation:fadeUp 0.5s 0.1s ease both; }
+  .ws-row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .watch-select {
+    flex:1; min-width:180px; background:var(--bg); border:1px solid var(--border);
+    border-radius:8px; padding:9px 12px; font-family:'DM Sans',sans-serif; font-size:14px;
+    color:var(--text); outline:none; cursor:pointer; transition:border-color 0.2s; appearance:none;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%236b7280' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+    background-repeat:no-repeat; background-position:right 12px center; padding-right:30px;
+  }
+  .watch-select:focus { border-color:var(--accent); }
+  .ws-add-btn { padding:9px 14px; background:var(--accent); color:var(--bg); border:none; border-radius:8px; font-family:'Bebas Neue',sans-serif; font-size:14px; letter-spacing:0.12em; cursor:pointer; white-space:nowrap; transition:opacity 0.2s; }
+  .ws-add-btn:hover { opacity:0.85; }
+  .active-watch-badge { display:flex; align-items:center; gap:8px; margin-top:10px; padding:8px 12px; background:var(--bg); border:1px solid var(--border); border-radius:8px; }
+  .awb-dot { width:8px; height:8px; border-radius:50%; background:var(--accent); flex-shrink:0; }
+  .awb-name { font-size:13px; color:var(--text); flex:1; }
+  .awb-edit { font-size:11px; color:var(--accent-dim); background:none; border:none; cursor:pointer; text-decoration:underline; }
+
+  /* ---- Watch modal ---- */
+  .modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:200; display:none; align-items:center; justify-content:center; padding:20px; }
+  .modal-overlay.open { display:flex; }
+  .modal { background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:24px; width:100%; max-width:400px; animation:fadeUp 0.25s ease both; }
+  .modal-title { font-family:'Bebas Neue',sans-serif; font-size:22px; letter-spacing:0.15em; color:var(--accent); margin-bottom:18px; }
+  .modal-field { margin-bottom:14px; }
+  .modal-field label { display:block; font-size:10px; letter-spacing:0.18em; color:var(--muted); text-transform:uppercase; margin-bottom:6px; }
+  .modal-input { width:100%; background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:10px 12px; font-family:'DM Sans',sans-serif; font-size:15px; color:var(--text); outline:none; transition:border-color 0.2s; }
+  .modal-input:focus { border-color:var(--accent); }
+  .modal-actions { display:flex; gap:8px; justify-content:flex-end; margin-top:18px; }
+  .modal-cancel { padding:9px 16px; background:transparent; border:1px solid var(--border); border-radius:8px; color:var(--muted); font-size:13px; cursor:pointer; transition:all 0.2s; }
+  .modal-cancel:hover { border-color:var(--accent); color:var(--accent); }
+  .modal-save { padding:9px 18px; background:var(--accent); color:var(--bg); border:none; border-radius:8px; font-family:'Bebas Neue',sans-serif; font-size:15px; letter-spacing:0.12em; cursor:pointer; transition:opacity 0.2s; }
+  .modal-save:hover { opacity:0.88; }
+  .modal-delete { padding:9px 14px; background:transparent; border:1px solid var(--red); border-radius:8px; color:var(--red); font-size:12px; cursor:pointer; margin-right:auto; opacity:0.7; transition:opacity 0.2s; }
+  .modal-delete:hover { opacity:1; }
+
+
+  /* ---- Watch type toggle ---- */
+  .type-toggle { display:flex; gap:0; border:1px solid var(--border); border-radius:8px; overflow:hidden; }
+  .type-btn { flex:1; padding:9px 12px; background:transparent; border:none; color:var(--muted); font-family:'DM Sans',sans-serif; font-size:14px; cursor:pointer; transition:all 0.2s; }
+  .type-btn.active { background:var(--accent); color:var(--bg); font-weight:500; }
+  .type-badge { display:inline-block; font-size:9px; letter-spacing:0.12em; text-transform:uppercase; padding:2px 6px; border-radius:4px; margin-left:6px; vertical-align:middle; }
+  .type-badge.mechanical { background:rgba(200,169,110,0.15); color:var(--accent); }
+  .type-badge.quartz { background:rgba(122,184,224,0.15); color:var(--blue); }
+
+  /* ---- Instructions ---- */
+  .instructions-card { padding:14px 18px; display:flex; flex-direction:column; gap:8px; animation:fadeUp 0.5s 0.15s ease both; }
+  .inst-step { display:flex; gap:11px; align-items:flex-start; opacity:0.3; transition:opacity 0.3s; }
+  .inst-step.active { opacity:1; }
+  .inst-num { width:20px; height:20px; border-radius:50%; background:var(--border); border:1.5px solid var(--accent-dim); color:var(--accent); font-family:'Bebas Neue',sans-serif; font-size:12px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+  .inst-step.active .inst-num { background:var(--accent); color:var(--bg); border-color:var(--accent); }
+  .inst-text { font-size:12px; color:var(--muted); line-height:1.5; }
+  .inst-step.active .inst-text { color:var(--text); }
+
+  /* ---- Tap button ---- */
+  .tap-btn { width:100%; max-width:520px; padding:24px 16px; background:transparent; border:2px solid var(--accent); border-radius:14px; color:var(--accent); cursor:pointer; transition:all 0.15s; margin-bottom:16px; display:flex; flex-direction:column; align-items:center; gap:5px; animation:fadeUp 0.5s 0.2s ease both; -webkit-tap-highlight-color:transparent; user-select:none; }
+  .tap-btn:hover { background:rgba(200,169,110,0.06); }
+  .tap-btn:active { transform:scale(0.97); background:rgba(200,169,110,0.16); }
+  .tap-btn.tapped { border-color:var(--green); color:var(--green); }
+  .tap-label { font-family:'Bebas Neue',sans-serif; font-size:clamp(19px,5vw,25px); letter-spacing:0.2em; }
+  .tap-sub { font-size:11px; letter-spacing:0.07em; color:var(--muted); }
+
+  /* ---- Compare panel ---- */
+  .compare-panel { padding:18px 20px; animation:fadeUp 0.35s ease both; }
+  .tapped-at { font-family:'Share Tech Mono',monospace; font-size:12px; color:var(--green); margin-bottom:12px; }
+  .input-row { display:flex; gap:10px; align-items:flex-start; flex-wrap:wrap; }
+  .watch-input { flex:1; min-width:130px; background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:9px 12px; font-family:'Share Tech Mono',monospace; font-size:22px; color:var(--text); letter-spacing:0.08em; outline:none; transition:border-color 0.2s; }
+  .watch-input:focus { border-color:var(--accent); }
+  .watch-input::placeholder { color:var(--border); }
+  .seconds-row { display:flex; align-items:center; gap:5px; flex-wrap:wrap; margin-bottom:8px; }
+  .sec-label { font-size:10px; color:var(--muted); letter-spacing:0.08em; }
+  .sec-btn { padding:4px 9px; background:var(--bg); border:1px solid var(--border); border-radius:5px; color:var(--muted); font-family:'Share Tech Mono',monospace; font-size:12px; cursor:pointer; transition:all 0.15s; }
+  .sec-btn.active { background:var(--accent); color:var(--bg); border-color:var(--accent); }
+  .calc-btn { padding:9px 16px; background:var(--accent); color:#0a0c0f; border:none; border-radius:8px; font-family:'Bebas Neue',sans-serif; font-size:15px; letter-spacing:0.15em; cursor:pointer; transition:opacity 0.2s,transform 0.15s; }
+  .calc-btn:hover { opacity:0.88; }
+  .calc-btn:active { transform:scale(0.97); }
+  .panel-hint { margin-top:10px; font-size:11px; color:var(--muted); font-style:italic; }
+
+  /* ---- Result ---- */
+  .result-panel { display:none; width:100%; max-width:520px; }
+  .result-panel.show { display:block; animation:fadeUp 0.35s ease both; }
+  .result-card { padding:20px 22px; margin-bottom:16px; }
+  .result-diff { font-family:'Share Tech Mono',monospace; font-size:34px; font-weight:bold; margin:6px 0 4px; }
+  .result-diff.fast { color:var(--red); }
+  .result-diff.slow { color:var(--blue); }
+  .result-diff.good { color:var(--green); }
+  .result-verdict { font-size:13px; color:var(--muted); }
+  .result-meta { font-size:11px; color:var(--muted); margin-top:8px; font-family:'Share Tech Mono',monospace; white-space:pre-line; line-height:1.6; }
+  .retry-btn { margin-top:14px; padding:7px 14px; background:transparent; border:1px solid var(--border); border-radius:7px; color:var(--muted); font-size:11px; letter-spacing:0.1em; cursor:pointer; transition:all 0.2s; }
+  .retry-btn:hover { border-color:var(--accent); color:var(--accent); }
+
+  /* ---- Drift tracker ---- */
+  .tracker-card { padding:20px 22px; }
+  .tracker-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; }
+  .drift-summary { display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; margin-bottom:16px; }
+  .drift-stat { background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:10px 8px 8px; text-align:center; }
+  .drift-stat-val { font-family:'Share Tech Mono',monospace; font-size:16px; font-weight:bold; margin-bottom:3px; }
+  .drift-stat-val.fast { color:var(--red); }
+  .drift-stat-val.slow { color:var(--blue); }
+  .drift-stat-val.good { color:var(--green); }
+  .drift-stat-val.neutral { color:var(--accent); }
+  .drift-stat-label { font-size:9px; letter-spacing:0.1em; color:var(--muted); text-transform:uppercase; }
+  .chart-wrap { position:relative; width:100%; height:160px; margin-bottom:10px; }
+  canvas { display:block; }
+
+  /* ---- Time Grapher ---- */
+  .tg-card { padding:20px 22px; }
+  .tg-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; }
+  .tg-start-btn { padding:8px 16px; background:var(--accent); color:var(--bg); border:none; border-radius:8px; font-family:'Bebas Neue',sans-serif; font-size:14px; letter-spacing:0.15em; cursor:pointer; transition:opacity 0.2s; }
+  .tg-start-btn:hover { opacity:0.85; }
+  .tg-start-btn.danger { background:transparent; border:1px solid var(--red); color:var(--red); font-size:12px; }
+  .tg-session { display:none; }
+  .tg-session.active { display:block; }
+  .pos-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
+  .pos-name { font-family:'Bebas Neue',sans-serif; font-size:22px; letter-spacing:0.15em; color:var(--accent); }
+  .pos-count { font-size:11px; color:var(--muted); letter-spacing:0.1em; }
+  .timer-ring-wrap { display:flex; flex-direction:column; align-items:center; margin:12px 0 16px; }
+  .timer-ring { position:relative; width:110px; height:110px; margin-bottom:8px; }
+  .timer-ring svg { transform:rotate(-90deg); }
+  .timer-ring-bg { fill:none; stroke:var(--border); stroke-width:6; }
+  .timer-ring-fill { fill:none; stroke:var(--accent); stroke-width:6; stroke-linecap:round; transition:stroke-dashoffset 1s linear; }
+  .timer-ring-fill.done { stroke:var(--green); }
+  .timer-num { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-family:'Share Tech Mono',monospace; font-size:28px; color:var(--text); }
+  .timer-hint { font-size:11px; color:var(--muted); letter-spacing:0.07em; text-align:center; }
+  .timer-controls { display:flex; gap:8px; justify-content:center; margin-bottom:14px; }
+  .timer-btn { padding:8px 20px; border-radius:8px; border:1px solid var(--border); background:transparent; color:var(--muted); font-family:'Bebas Neue',sans-serif; font-size:14px; letter-spacing:0.12em; cursor:pointer; transition:all 0.15s; }
+  .timer-btn.primary { background:var(--accent); color:var(--bg); border-color:var(--accent); }
+  .timer-btn.primary:hover { opacity:0.88; }
+  .timer-btn:hover { border-color:var(--accent); color:var(--accent); }
+  .rate-entry { background:var(--bg); border:1px solid var(--border); border-radius:10px; padding:14px 16px; margin-bottom:12px; }
+  .rate-entry-label { font-size:10px; letter-spacing:0.15em; color:var(--muted); text-transform:uppercase; margin-bottom:8px; }
+  .rate-input-row { display:flex; gap:10px; align-items:center; }
+  .rate-input { flex:1; background:var(--surface); border:1px solid var(--border); border-radius:7px; padding:8px 12px; font-family:'Share Tech Mono',monospace; font-size:24px; color:var(--text); letter-spacing:0.05em; outline:none; transition:border-color 0.2s; text-align:center; }
+  .rate-input:focus { border-color:var(--accent); }
+  .rate-input::placeholder { color:var(--border); font-size:16px; }
+  .rate-unit { font-size:12px; color:var(--muted); white-space:nowrap; letter-spacing:0.05em; }
+  .rate-skip { font-size:11px; color:var(--muted); background:none; border:none; cursor:pointer; text-decoration:underline; padding:4px 0; }
+  .pos-dots { display:flex; gap:6px; justify-content:center; margin-bottom:10px; }
+  .pos-dot { width:8px; height:8px; border-radius:50%; background:var(--border); transition:all 0.3s; }
+  .pos-dot.done { background:var(--green); }
+  .pos-dot.active { background:var(--accent); transform:scale(1.3); }
+  .pos-dot.skipped { background:var(--muted); opacity:0.4; }
+  .tg-results { display:none; }
+  .tg-results.show { display:block; }
+  .pos-grid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-bottom:14px; }
+  .pos-cell { background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:9px 8px; text-align:center; }
+  .pos-cell-name { font-size:9px; letter-spacing:0.15em; color:var(--muted); text-transform:uppercase; margin-bottom:3px; }
+  .pos-cell-val { font-family:'Share Tech Mono',monospace; font-size:16px; font-weight:bold; }
+  .pos-cell-val.fast { color:var(--red); }
+  .pos-cell-val.slow { color:var(--blue); }
+  .pos-cell-val.good { color:var(--green); }
+  .pos-cell-val.skip { color:var(--border); font-size:12px; }
+  .compare-banner { background:var(--bg); border:1px solid var(--border); border-radius:10px; padding:14px 16px; margin-bottom:12px; }
+  .compare-banner-label { font-size:10px; letter-spacing:0.18em; color:var(--muted); text-transform:uppercase; margin-bottom:10px; }
+  .compare-row { display:flex; justify-content:space-between; align-items:flex-end; gap:8px; flex-wrap:wrap; }
+  .compare-item { text-align:center; flex:1; min-width:80px; }
+  .compare-val { font-family:'Share Tech Mono',monospace; font-size:26px; font-weight:bold; line-height:1; margin-bottom:3px; }
+  .compare-lbl { font-size:9px; letter-spacing:0.12em; color:var(--muted); text-transform:uppercase; }
+  .compare-vs { font-size:14px; color:var(--border); align-self:center; }
+  .compare-delta { font-family:'Share Tech Mono',monospace; font-size:12px; color:var(--muted); text-align:center; margin-top:8px; padding-top:8px; border-top:1px solid var(--border); }
+  .tg-redo-btn { font-size:11px; color:var(--accent-dim); background:none; border:none; cursor:pointer; text-decoration:underline; letter-spacing:0.06em; }
+
+  /* ---- History ---- */
+  .history-panel { width:100%; max-width:520px; }
+  .history-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
+  .history-title { font-size:10px; letter-spacing:0.2em; color:var(--muted); text-transform:uppercase; }
+  .clear-btn { font-size:11px; color:var(--red); background:none; border:none; cursor:pointer; letter-spacing:0.06em; opacity:0.5; transition:opacity 0.2s; }
+  .clear-btn:hover { opacity:1; }
+  .history-list { display:flex; flex-direction:column; gap:7px; }
+  .history-item { background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:10px 14px; display:flex; justify-content:space-between; align-items:center; gap:10px; }
+  .hi-date { font-size:11px; color:var(--accent-dim); font-family:'Share Tech Mono',monospace; margin-bottom:2px; }
+  .hi-watch { font-size:11px; color:var(--muted); }
+  .hi-diff { font-family:'Share Tech Mono',monospace; font-size:15px; font-weight:bold; }
+  .hi-diff.fast { color:var(--red); }
+  .hi-diff.slow { color:var(--blue); }
+  .hi-diff.good { color:var(--green); }
+  .empty-state { text-align:center; padding:22px; color:var(--muted); font-size:12px; letter-spacing:0.05em; border:1px dashed var(--border); border-radius:8px; }
+
+  .snap-flash { position:fixed; inset:0; background:rgba(200,169,110,0.07); pointer-events:none; opacity:0; transition:opacity 0.05s; z-index:99; }
+  .snap-flash.active { opacity:1; }
+
+
+  /* ---- Watch History section ---- */
+  .wh-panel { width:100%; max-width:520px; margin-bottom:16px; }
+  .wh-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
+  .wh-title { font-size:10px; letter-spacing:0.2em; color:var(--muted); text-transform:uppercase; }
+  .wh-list { display:flex; flex-direction:column; gap:7px; }
+  .wh-item {
+    background:var(--surface); border:1px solid var(--border); border-radius:10px;
+    padding:12px 16px; display:flex; justify-content:space-between; align-items:center;
+    gap:12px; cursor:pointer; transition:border-color 0.2s, background 0.2s;
+  }
+  .wh-item:hover { border-color:var(--accent); background:rgba(200,169,110,0.04); }
+  .wh-item-left { flex:1; min-width:0; }
+  .wh-item-brand { font-family:'Bebas Neue',sans-serif; font-size:16px; letter-spacing:0.1em; color:var(--text); }
+  .wh-item-model { font-size:12px; color:var(--muted); margin-top:1px; }
+  .wh-item-nick { font-size:11px; color:var(--accent-dim); font-style:italic; }
+  .wh-item-stats { text-align:right; flex-shrink:0; }
+  .wh-item-count { font-family:'Share Tech Mono',monospace; font-size:13px; color:var(--accent); }
+  .wh-item-last { font-size:10px; color:var(--muted); margin-top:2px; letter-spacing:0.04em; }
+  .wh-item-arrow { color:var(--border); font-size:14px; flex-shrink:0; }
+
+  /* ---- Watch detail modal ---- */
+  .wd-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.75); z-index:300; display:none; align-items:flex-start; justify-content:center; padding:16px; overflow-y:auto; }
+  .wd-overlay.open { display:flex; }
+  .wd-modal {
+    background:var(--surface); border:1px solid var(--border); border-radius:16px;
+    width:100%; max-width:500px; margin:auto; animation:fadeUp 0.25s ease both;
+    overflow:hidden;
+  }
+  .wd-header {
+    display:flex; justify-content:space-between; align-items:flex-start;
+    padding:20px 20px 16px; border-bottom:1px solid var(--border);
+    background:linear-gradient(135deg,rgba(200,169,110,0.08),transparent 60%);
+  }
+  .wd-title-block {}
+  .wd-brand { font-family:'Bebas Neue',sans-serif; font-size:24px; letter-spacing:0.12em; color:var(--accent); line-height:1; }
+  .wd-model { font-size:14px; color:var(--text); margin-top:3px; }
+  .wd-nick { font-size:11px; color:var(--muted); font-style:italic; margin-top:2px; }
+  .wd-close { background:none; border:1px solid var(--border); border-radius:7px; color:var(--muted); font-size:18px; cursor:pointer; padding:4px 10px; transition:all 0.2s; line-height:1; }
+  .wd-close:hover { border-color:var(--accent); color:var(--accent); }
+  .wd-body { padding:18px 20px; display:flex; flex-direction:column; gap:18px; }
+
+  .wd-section-label { font-size:10px; letter-spacing:0.2em; color:var(--muted); text-transform:uppercase; margin-bottom:10px; padding-bottom:6px; border-bottom:1px solid var(--border); }
+
+  /* Mini drift summary in modal */
+  .wd-stats { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-bottom:12px; }
+  .wd-stat { background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:9px 7px; text-align:center; }
+  .wd-stat-val { font-family:'Share Tech Mono',monospace; font-size:15px; font-weight:bold; margin-bottom:2px; }
+  .wd-stat-val.fast{color:var(--red)}.wd-stat-val.slow{color:var(--blue)}.wd-stat-val.good{color:var(--green)}.wd-stat-val.neutral{color:var(--accent);}
+  .wd-stat-label { font-size:9px; letter-spacing:0.1em; color:var(--muted); text-transform:uppercase; }
+
+  .wd-chart-wrap { width:100%; height:140px; margin-bottom:6px; }
+
+  /* TG mini grid in modal */
+  .wd-pos-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; margin-bottom:10px; }
+  .wd-pos-cell { background:var(--bg); border:1px solid var(--border); border-radius:7px; padding:8px 6px; text-align:center; }
+  .wd-pos-name { font-size:9px; letter-spacing:0.12em; color:var(--muted); text-transform:uppercase; margin-bottom:2px; }
+  .wd-pos-val { font-family:'Share Tech Mono',monospace; font-size:15px; font-weight:bold; }
+  .wd-pos-val.fast{color:var(--red)}.wd-pos-val.slow{color:var(--blue)}.wd-pos-val.good{color:var(--green)}.wd-pos-val.skip{color:var(--border);font-size:11px;}
+  .wd-tg-avg { font-size:11px; color:var(--muted); text-align:center; margin-top:4px; font-family:'Share Tech Mono',monospace; }
+
+  /* Check log in modal */
+  .wd-check-list { display:flex; flex-direction:column; gap:6px; max-height:260px; overflow-y:auto; }
+  .wd-check-item { background:var(--bg); border:1px solid var(--border); border-radius:7px; padding:9px 12px; display:flex; justify-content:space-between; align-items:center; gap:8px; }
+  .wd-check-date { font-size:11px; color:var(--accent-dim); font-family:'Share Tech Mono',monospace; }
+  .wd-check-times { font-size:11px; color:var(--muted); }
+  .wd-check-diff { font-family:'Share Tech Mono',monospace; font-size:14px; font-weight:bold; }
+  .wd-check-diff.fast{color:var(--red)}.wd-check-diff.slow{color:var(--blue)}.wd-check-diff.good{color:var(--green);}
+
+
+  /* ---- Isochronism Check ---- */
+  .iso-card { padding:20px 22px; }
+  .iso-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; }
+  .iso-start-btn { padding:8px 16px; background:transparent; border:1.5px solid var(--accent); color:var(--accent); border-radius:8px; font-family:'Bebas Neue',sans-serif; font-size:14px; letter-spacing:0.15em; cursor:pointer; transition:all 0.2s; }
+  .iso-start-btn:hover { background:rgba(200,169,110,0.08); }
+  .iso-start-btn.danger { border-color:var(--red); color:var(--red); }
+
+  /* Info box */
+  .iso-info { background:var(--bg); border:1px solid var(--border); border-radius:10px; padding:14px 16px; margin-bottom:14px; }
+  .iso-info-title { font-family:'Bebas Neue',sans-serif; font-size:15px; letter-spacing:0.12em; color:var(--accent); margin-bottom:8px; }
+  .iso-info-text { font-size:12px; color:var(--muted); line-height:1.7; }
+  .iso-info-text strong { color:var(--text); }
+
+  /* Steps */
+  .iso-step { display:none; }
+  .iso-step.active { display:block; animation:fadeUp 0.3s ease both; }
+
+  .iso-step-header { display:flex; align-items:center; gap:10px; margin-bottom:14px; }
+  .iso-step-num { width:26px; height:26px; border-radius:50%; background:var(--accent); color:var(--bg); font-family:'Bebas Neue',sans-serif; font-size:14px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+  .iso-step-title { font-family:'Bebas Neue',sans-serif; font-size:18px; letter-spacing:0.12em; color:var(--text); }
+
+  /* Position selector */
+  .iso-pos-select { width:100%; background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:10px 12px; font-family:'DM Sans',sans-serif; font-size:14px; color:var(--text); outline:none; cursor:pointer; appearance:none; margin-bottom:12px;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%236b7280' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+    background-repeat:no-repeat; background-position:right 12px center; padding-right:30px; }
+  .iso-pos-select:focus { border-color:var(--accent); }
+
+  /* Reading fields */
+  .iso-fields { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-bottom:14px; }
+  .iso-field { }
+  .iso-field-label { font-size:9px; letter-spacing:0.15em; color:var(--muted); text-transform:uppercase; margin-bottom:5px; }
+  .iso-field-input { width:100%; background:var(--bg); border:1px solid var(--border); border-radius:7px; padding:8px 8px; font-family:'Share Tech Mono',monospace; font-size:18px; color:var(--text); outline:none; text-align:center; transition:border-color 0.2s; }
+  .iso-field-input:focus { border-color:var(--accent); }
+  .iso-field-input::placeholder { color:var(--border); font-size:13px; }
+  .iso-field-unit { font-size:9px; color:var(--muted); text-align:center; margin-top:3px; letter-spacing:0.08em; }
+
+  /* Confirm row */
+  .iso-confirm-row { display:flex; align-items:center; gap:10px; margin-bottom:14px; padding:12px 14px; background:var(--bg); border:1px solid var(--border); border-radius:8px; }
+  .iso-confirm-row input[type=checkbox] { width:16px; height:16px; accent-color:var(--accent); flex-shrink:0; cursor:pointer; }
+  .iso-confirm-row label { font-size:12px; color:var(--text); cursor:pointer; line-height:1.5; }
+
+  /* 24hr waiting state */
+  .iso-waiting { text-align:center; padding:20px 16px; }
+  .iso-waiting-icon { font-size:36px; margin-bottom:10px; }
+  .iso-waiting-title { font-family:'Bebas Neue',sans-serif; font-size:20px; letter-spacing:0.15em; color:var(--accent); margin-bottom:8px; }
+  .iso-waiting-text { font-size:12px; color:var(--muted); line-height:1.7; max-width:340px; margin:0 auto 14px; }
+  .iso-waiting-pos { font-family:'Share Tech Mono',monospace; font-size:13px; color:var(--text); background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:8px 14px; display:inline-block; margin-bottom:14px; }
+  .iso-ready-btn { padding:10px 22px; background:var(--accent); color:var(--bg); border:none; border-radius:8px; font-family:'Bebas Neue',sans-serif; font-size:16px; letter-spacing:0.15em; cursor:pointer; transition:opacity 0.2s; }
+  .iso-ready-btn:hover { opacity:0.88; }
+
+  /* Results */
+  .iso-results { display:none; }
+  .iso-results.show { display:block; animation:fadeUp 0.3s ease both; }
+  .iso-result-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:14px; }
+  .iso-result-col { background:var(--bg); border:1px solid var(--border); border-radius:10px; padding:12px 14px; }
+  .iso-result-col-title { font-size:9px; letter-spacing:0.15em; color:var(--muted); text-transform:uppercase; margin-bottom:10px; }
+  .iso-reading-row { display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; }
+  .iso-reading-label { font-size:11px; color:var(--muted); }
+  .iso-reading-val { font-family:'Share Tech Mono',monospace; font-size:13px; color:var(--text); }
+  .iso-verdict { border-radius:10px; padding:14px 16px; margin-bottom:12px; border:1px solid var(--border); }
+  .iso-verdict-title { font-family:'Bebas Neue',sans-serif; font-size:18px; letter-spacing:0.12em; margin-bottom:6px; }
+  .iso-verdict-text { font-size:12px; line-height:1.6; }
+  .iso-verdict.good { border-color:var(--green); background:rgba(82,192,160,0.06); }
+  .iso-verdict.good .iso-verdict-title { color:var(--green); }
+  .iso-verdict.warn { border-color:var(--accent); background:rgba(200,169,110,0.06); }
+  .iso-verdict.warn .iso-verdict-title { color:var(--accent); }
+  .iso-verdict.poor { border-color:var(--red); background:rgba(224,82,82,0.06); }
+  .iso-verdict.poor .iso-verdict-title { color:var(--red); }
+  .iso-redo-btn { font-size:11px; color:var(--accent-dim); background:none; border:none; cursor:pointer; text-decoration:underline; }
+
+
+  /* ---- Lift angle note ---- */
+  .lift-note { display:flex; align-items:flex-start; gap:8px; padding:10px 12px; background:rgba(200,169,110,0.07); border:1px solid var(--accent-dim); border-radius:8px; margin-bottom:14px; }
+  .lift-note-icon { font-size:14px; flex-shrink:0; margin-top:1px; }
+  .lift-note-text { font-size:11px; color:var(--text); line-height:1.6; }
+  .lift-note-text a { color:var(--accent); text-decoration:underline; }
+  .lift-note-val { font-family:'Share Tech Mono',monospace; font-size:13px; color:var(--accent); }
+
+  /* ---- Recommendation pills ---- */
+  .iso-recs { display:flex; flex-direction:column; gap:7px; margin-top:12px; }
+  .iso-rec { display:flex; align-items:flex-start; gap:8px; padding:9px 11px; border-radius:8px; border:1px solid var(--border); }
+  .iso-rec.good { border-color:var(--green); background:rgba(82,192,160,0.05); }
+  .iso-rec.warn { border-color:var(--accent); background:rgba(200,169,110,0.05); }
+  .iso-rec.poor { border-color:var(--red); background:rgba(224,82,82,0.05); }
+  .iso-rec-icon { font-size:13px; flex-shrink:0; }
+  .iso-rec-body { font-size:11px; line-height:1.6; }
+  .iso-rec-title { font-weight:600; margin-bottom:2px; }
+  .iso-rec.good .iso-rec-title { color:var(--green); }
+  .iso-rec.warn .iso-rec-title { color:var(--accent); }
+  .iso-rec.poor .iso-rec-title { color:var(--red); }
+  .iso-rec-text { color:var(--muted); }
+
+  @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)}50%{opacity:0.5;transform:scale(0.8)} }
+  @keyframes spin-pulse { 0%,100%{opacity:1;transform:scale(1.2)}50%{opacity:0.4;transform:scale(0.7)} }
+  @keyframes fadeUp { from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)} }
+  @keyframes fadeDown { from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)} }
+
+  footer { margin-top:28px; font-size:10px; color:var(--border); letter-spacing:0.07em; text-align:center; }
+</style>
+</head>
+<body>
+
+<div class="snap-flash" id="flash"></div>
+
+<!-- Watch add/edit modal -->
+<div class="modal-overlay" id="watchModal">
+  <div class="modal">
+    <div class="modal-title" id="modalTitle">Add Watch</div>
+    <div class="modal-field">
+      <label>Brand</label>
+      <input class="modal-input" id="modalBrand" type="text" placeholder="e.g. Seiko">
+    </div>
+    <div class="modal-field">
+      <label>Model</label>
+      <input class="modal-input" id="modalModel" type="text" placeholder="e.g. SKX007">
+    </div>
+    <div class="modal-field">
+      <label>Watch Type</label>
+      <div class="type-toggle">
+        <button class="type-btn active" id="typeMechanical" onclick="setWatchType('mechanical')">Mechanical</button>
+        <button class="type-btn" id="typeQuartz" onclick="setWatchType('quartz')">Quartz</button>
+      </div>
+    </div>
+    <div class="modal-field" id="liftAngleField">
+      <label>Movement Lift Angle <span style="font-size:9px;color:var(--muted);letter-spacing:0.05em">(mechanical only — affects amplitude reading)</span></label>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input class="modal-input" id="modalLiftAngle" type="number" min="30" max="70" step="1" placeholder="52" style="width:90px;flex:none">
+        <span style="font-size:12px;color:var(--muted)">&deg; &nbsp;&mdash;&nbsp; <a href="https://watchguy.co.uk/cgi-bin/lift_angles" target="_blank" style="color:var(--accent);font-size:11px">Look up your calibre &rarr;</a></span>
+      </div>
+      <div style="font-size:10px;color:var(--muted);margin-top:5px;line-height:1.5">Default 52&deg; works for most ETA/Sellita movements. Seiko NH35/NH38: 53&deg;, Miyota 8215/9015: 49&deg;, Rolex 31xx: 52&deg;, Valjoux 7750: 50&deg;</div>
+    </div>
+    <div class="modal-field">
+      <label>Nickname (optional)</label>
+      <input class="modal-input" id="modalNick" type="text" placeholder="e.g. Daily beater">
+    </div>
+    <div class="modal-actions">
+      <button class="modal-delete" id="modalDeleteBtn" onclick="deleteWatch()" style="display:none">Delete Watch</button>
+      <button class="modal-cancel" onclick="closeWatchModal()">Cancel</button>
+      <button class="modal-save" onclick="saveWatch()">Save</button>
+    </div>
+  </div>
+</div>
+
+<header>
+  <div class="logo">Horology Tool</div>
+  <h1>Watch Accuracy Checker</h1>
+</header>
+
+<!-- Clock -->
+<div class="card clock-card">
+  <div class="sync-badge" onclick="syncTime()" title="Tap to re-sync">
+    <div class="sync-dot" id="syncDot"></div>
+    <span id="syncLabel">Syncing to internet time...</span>
+  </div>
+  <div class="time-display" id="clockDisplay">00:00:00</div>
+  <div class="date-display" id="dateDisplay">—</div>
+  <div class="ms-bar"><div class="ms-fill" id="msFill" style="width:0%"></div></div>
+  <div class="ms-label" id="msLabel">000 ms</div>
+</div>
+
+<!-- Watch selector -->
+<div class="card watch-selector-card">
+  <div class="panel-label">Active Watch</div>
+  <div class="ws-row">
+    <select class="watch-select" id="watchSelect" onchange="selectWatch(this.value)">
+      <option value="">— Select a watch —</option>
+    </select>
+    <button class="ws-add-btn" onclick="openAddWatch()">+ Add</button>
+  </div>
+  <div class="active-watch-badge" id="activeWatchBadge" style="display:none">
+    <div class="awb-dot"></div>
+    <div class="awb-name" id="activeWatchName">—</div>
+    <button class="awb-edit" onclick="openEditWatch()">Edit</button>
+  </div>
+</div>
+
+<!-- Instructions -->
+<div class="card instructions-card">
+  <div class="inst-step active" id="step1">
+    <div class="inst-num">1</div>
+    <div class="inst-text">Select your watch above, then watch the seconds hand reach a clean landmark — e.g. <strong>:00</strong></div>
+  </div>
+  <div class="inst-step active" id="step2">
+    <div class="inst-num">2</div>
+    <div class="inst-text">Tap the button below <strong>at that exact moment</strong></div>
+  </div>
+  <div class="inst-step" id="step3">
+    <div class="inst-num">3</div>
+    <div class="inst-text">Enter what time your watch showed when you tapped</div>
+  </div>
+</div>
+
+<!-- Tap button -->
+<button class="tap-btn" id="tapBtn" onclick="recordTap()">
+  <span class="tap-label">TAP ON YOUR WATCH LANDMARK</span>
+  <span class="tap-sub">Select a watch above first</span>
+</button>
+
+<!-- Entry panel -->
+<div class="card compare-panel" id="comparePanel" style="display:none">
+  <div class="panel-label">What time did your watch show at the tap?</div>
+  <div class="tapped-at" id="tappedAt"></div>
+  <div class="input-row">
+    <input class="watch-input" id="watchTimeInput" type="text" placeholder="HH:MM" maxlength="5" oninput="formatWatchInput(this)">
+    <div style="display:flex;flex-direction:column;gap:7px">
+      <div class="seconds-row">
+        <span class="sec-label">Seconds:</span>
+        <button class="sec-btn active" id="sec00" onclick="selectSec(0)">:00</button>
+        <button class="sec-btn" id="sec15" onclick="selectSec(15)">:15</button>
+        <button class="sec-btn" id="sec30" onclick="selectSec(30)">:30</button>
+        <button class="sec-btn" id="sec45" onclick="selectSec(45)">:45</button>
+      </div>
+      <button class="calc-btn" onclick="calculateDiff()">Calculate</button>
+    </div>
+  </div>
+  <div class="panel-hint">Tap on a landmark second, then select it above. HH:MM is enough.</div>
+</div>
+
+<!-- Result -->
+<div class="result-panel" id="resultPanel">
+  <div class="card result-card">
+    <div class="panel-label">Result</div>
+    <div class="result-diff" id="resultDiff">—</div>
+    <div class="result-verdict" id="resultVerdict">—</div>
+    <div class="result-meta" id="resultMeta"></div>
+    <button class="retry-btn" onclick="resetTap()">Check again</button>
+  </div>
+</div>
+
+<!-- 7-day drift tracker -->
+<div class="card tracker-card" id="trackerCard" style="display:none">
+  <div class="tracker-header">
+    <div class="panel-label" style="margin:0" id="trackerTitle">7-Day Drift Tracker</div>
+  </div>
+  <div class="drift-summary" id="driftSummary"></div>
+  <div class="chart-wrap" id="chartWrap">
+    <canvas id="driftChart"></canvas>
+  </div>
+  <div style="font-size:10px;color:var(--muted);letter-spacing:0.05em;text-align:center;margin-top:4px" id="chartNote"></div>
+</div>
+
+<!-- Time Grapher -->
+<div class="card tg-card" id="tgCard">
+  <div class="tg-header">
+    <div class="panel-label" style="margin:0">Time Grapher</div>
+    <button class="tg-start-btn" id="tgStartBtn" onclick="startTgSession()">Start Session</button>
+  </div>
+  <div class="lift-note" id="tgLiftNote"><div class="lift-note-icon">??</div><div class="lift-note-text">Confirm your Time Grapher lift angle matches this movement before recording amplitude. Current setting: <span class="lift-note-val" id="tgLiftVal">52°</span>. Incorrect lift angle affects amplitude accuracy by ~9° per degree of error. <a href="https://watchguy.co.uk/cgi-bin/lift_angles" target="_blank">Look up calibre ?</a></div></div>
+  <div class="tg-results" id="tgResults">
+    <div class="pos-grid" id="tgPosGrid"></div>
+    <div class="compare-banner" id="tgCompareBanner"></div>
+    <div style="text-align:right">
+      <button class="tg-redo-btn" onclick="startTgSession()">Re-run session</button>
+    </div>
+  </div>
+  <div class="tg-session" id="tgSession">
+    <div class="pos-dots" id="posDots"></div>
+    <div class="pos-header">
+      <div class="pos-name" id="posName">—</div>
+      <div class="pos-count" id="posCount"></div>
+    </div>
+    <div class="timer-ring-wrap">
+      <div class="timer-ring">
+        <svg width="110" height="110" viewBox="0 0 110 110">
+          <circle class="timer-ring-bg" cx="55" cy="55" r="48"/>
+          <circle class="timer-ring-fill" id="timerRingFill" cx="55" cy="55" r="48" stroke-dasharray="301.6" stroke-dashoffset="0"/>
+        </svg>
+        <div class="timer-num" id="timerNum">60</div>
+      </div>
+      <div class="timer-hint" id="timerHint">Place watch in position, then start timer</div>
+    </div>
+    <div class="timer-controls">
+      <button class="timer-btn primary" id="timerStartBtn" onclick="timerAction()">Start Timer</button>
+      <button class="timer-btn" onclick="skipPosition()">Skip Position</button>
+    </div>
+    <div class="rate-entry" id="rateEntry" style="display:none">
+      <div class="rate-entry-label" id="rateEntryLabel">Enter Time Grapher reading</div>
+      <div class="rate-input-row">
+        <input class="rate-input" id="rateInput" type="number" step="0.1" placeholder="+0.0" inputmode="decimal">
+        <span class="rate-unit">s / day</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px">
+        <button class="rate-skip" onclick="skipPosition()">Skip this position</button>
+        <button class="calc-btn" onclick="recordRate()">Save &amp; Next</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Isochronism Check -->
+<div class="card iso-card" id="isoCard" style="display:none">
+  <div class="iso-header">
+    <div class="panel-label" style="margin:0">Isochronism Check</div>
+    <button class="iso-start-btn" id="isoStartBtn" onclick="startIsoCheck()">Start Check</button>
+  </div>
+
+  <!-- Saved results -->
+  <div class="iso-results" id="isoResults">
+    <div class="iso-result-grid" id="isoResultGrid"></div>
+    <div class="iso-verdict" id="isoVerdict"></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px"><button class="iso-redo-btn" onclick="startIsoCheck()">Re-run check</button><button class="calc-btn" onclick="dismissIsoResults()" style="font-size:13px;padding:8px 20px">Done</button></div>
+  </div>
+
+  <!-- Active check -->
+  <div id="isoActive" style="display:none">
+
+    <!-- Step 1: readiness confirm -->
+    <div class="iso-step active" id="isoStep1">
+      <div class="iso-info">
+        <div class="iso-info-title">What is an Isochronism Check?</div>
+        <div class="iso-info-text">
+          Isochronism describes how consistently a watch keeps time as its mainspring winds down.
+          A perfectly isochronous watch runs at the same rate whether fully wound or nearly run down.<br><br>
+          <strong>Step 1 — Full wind reading (30–60 min after winding):</strong>
+          After fully winding your watch, rest it for 30–60 minutes to allow the mainspring torque to settle.
+          Then record the amplitude, rate, and beat error from your Time Grapher.<br><br>
+          <strong>Step 2 — 24-hour reading:</strong>
+          Leave the watch stationary in a single position for 24 hours, then record the same three readings.
+          The difference in rate between the two readings is the isochronal error.
+        </div>
+      </div>
+      <div class="iso-confirm-row">
+        <input type="checkbox" id="isoWindConfirm" onchange="isoWindCheck()">
+        <label for="isoWindConfirm">I have fully wound the watch and it has been resting for at least 30–60 minutes</label>
+      </div>
+      <button class="calc-btn" id="isoStep1Btn" onclick="goIsoStep2()" style="width:100%;opacity:0.4;pointer-events:none">Continue to Full Wind Reading</button>
+    </div>
+
+    <!-- Step 2: full wind readings -->
+    <div class="iso-step" id="isoStep2">
+      <div class="iso-step-header">
+        <div class="iso-step-num">1</div>
+        <div class="iso-step-title">Full Wind Reading</div>
+      </div>
+      <div class="panel-label">Position watch is currently resting in</div>
+      <select class="iso-pos-select" id="isoPos1">
+        <option value="">— Select position —</option>
+        <option value="Dial Up">Dial Up</option>
+        <option value="Dial Down">Dial Down</option>
+        <option value="Crown Up">Crown Up</option>
+        <option value="Crown Down">Crown Down</option>
+        <option value="Crown Left">Crown Left</option>
+        <option value="Crown Right">Crown Right</option>
+      </select>
+      <div class="lift-note" id="isoLiftNote"><div class="lift-note-icon">??</div><div class="lift-note-text">Confirm your Time Grapher lift angle is set correctly before recording. Current setting: <span class="lift-note-val" id="isoLiftVal">52°</span>. <a href="https://watchguy.co.uk/cgi-bin/lift_angles" target="_blank">Look up calibre ?</a></div></div>
+      <div class="panel-label">Time Grapher readings (30–60 min after full wind)</div>
+      <div class="iso-fields">
+        <div class="iso-field">
+          <div class="iso-field-label">Rate</div>
+          <input class="iso-field-input" id="isoRate1" type="number" step="0.1" placeholder="0.0" inputmode="decimal">
+          <div class="iso-field-unit">s / day</div>
+        </div>
+        <div class="iso-field">
+          <div class="iso-field-label">Amplitude</div>
+          <input class="iso-field-input" id="isoAmp1" type="number" step="1" placeholder="000" inputmode="decimal">
+          <div class="iso-field-unit">degrees</div>
+        </div>
+        <div class="iso-field">
+          <div class="iso-field-label">Beat Error</div>
+          <input class="iso-field-input" id="isoBe1" type="number" step="0.1" placeholder="0.0" inputmode="decimal">
+          <div class="iso-field-unit">ms</div>
+        </div>
+      </div>
+      <button class="calc-btn" onclick="saveIsoStep1()" style="width:100%">Save &amp; Set 24hr Rest</button>
+    </div>
+
+    <!-- Step 3: 24hr waiting -->
+    <div class="iso-step" id="isoStep3">
+      <div class="iso-waiting">
+        <div class="iso-waiting-icon">&#x23F1;</div>
+        <div class="iso-waiting-title">Set Your 24-Hour Timer</div>
+        <div class="iso-waiting-text">
+          Leave the watch completely stationary in the position shown below.
+          Do not wind, move, or wear the watch during this period.
+          Set a timer or reminder for 24 hours, then return here to record the final reading.
+        </div>
+        <div class="iso-waiting-pos" id="isoWaitingPos">—</div>
+        <div class="iso-waiting-text" style="font-size:11px;margin-top:0">Full wind reading saved: <span id="isoStep1Summary" style="color:var(--text)">—</span></div>
+        <button class="iso-ready-btn" onclick="goIsoStep4()">24 Hours Have Passed — Record Final Reading</button>
+      </div>
+    </div>
+
+    <!-- Step 4: 24hr readings -->
+    <div class="iso-step" id="isoStep4">
+      <div class="iso-step-header">
+        <div class="iso-step-num">2</div>
+        <div class="iso-step-title">24-Hour Reading</div>
+      </div>
+      <div class="panel-label">Same position as Step 1</div>
+      <div class="iso-waiting-pos" id="isoPos2Display" style="margin-bottom:12px">—</div>
+      <div class="panel-label">Time Grapher readings (24 hours after full wind)</div>
+      <div class="iso-fields">
+        <div class="iso-field">
+          <div class="iso-field-label">Rate</div>
+          <input class="iso-field-input" id="isoRate2" type="number" step="0.1" placeholder="0.0" inputmode="decimal">
+          <div class="iso-field-unit">s / day</div>
+        </div>
+        <div class="iso-field">
+          <div class="iso-field-label">Amplitude</div>
+          <input class="iso-field-input" id="isoAmp2" type="number" step="1" placeholder="000" inputmode="decimal">
+          <div class="iso-field-unit">degrees</div>
+        </div>
+        <div class="iso-field">
+          <div class="iso-field-label">Beat Error</div>
+          <input class="iso-field-input" id="isoBe2" type="number" step="0.1" placeholder="0.0" inputmode="decimal">
+          <div class="iso-field-unit">ms</div>
+        </div>
+      </div>
+      <button class="calc-btn" onclick="saveIsoStep2()" style="width:100%">Calculate Isochronal Error</button>
+    </div>
+
+  </div>
+</div>
+
+<!-- Watch History -->
+<div class="wh-panel" id="whPanel">
+  <div class="wh-header">
+    <div class="wh-title">Watch History</div>
+  </div>
+  <div class="wh-list" id="whList">
+    <div class="empty-state">No watches added yet</div>
+  </div>
+</div>
+
+<!-- Watch detail modal -->
+<div class="wd-overlay" id="wdOverlay">
+  <div class="wd-modal">
+    <div class="wd-header">
+      <div class="wd-title-block">
+        <div class="wd-brand" id="wdBrand">—</div>
+        <div class="wd-model" id="wdModel">—</div>
+        <div class="wd-nick" id="wdNick"></div>
+      </div>
+      <button class="wd-close" onclick="closeWatchDetail()">&#x2715;</button>
+    </div>
+    <div class="wd-body">
+
+      <!-- Drift summary -->
+      <div>
+        <div class="wd-section-label">7-Day Drift Summary</div>
+        <div class="wd-stats" id="wdStats"></div>
+        <div class="wd-chart-wrap" id="wdChartWrap">
+          <canvas id="wdChart"></canvas>
+        </div>
+        <div style="font-size:10px;color:var(--muted);text-align:center;letter-spacing:0.05em" id="wdChartNote"></div>
+      </div>
+
+      <!-- Time Grapher -->
+      <div id="wdTgSection">
+        <div class="wd-section-label">Time Grapher — Last Session</div>
+        <div class="wd-pos-grid" id="wdPosGrid"></div>
+        <div class="wd-tg-avg" id="wdTgAvg"></div>
+      </div>
+
+
+      <!-- Isochronism -->
+      <div id="wdIsoSection" style="display:none">
+        <div class="wd-section-label">Isochronism Check — Last Result</div>
+        <div id="wdIsoContent"></div>
+      </div>
+
+      <!-- Check log -->
+      <div>
+        <div class="wd-section-label">Rate Check Log</div>
+        <div class="wd-check-list" id="wdCheckList"></div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- History -->
+<div class="history-panel">
+  <div class="history-header">
+    <div class="history-title" id="historyTitle">Rate Check Log</div>
+    <button class="clear-btn" onclick="clearWatchData()">Clear watch data</button>
+  </div>
+  <div class="history-list" id="historyList">
+    <div class="empty-state">Select or add a watch to begin</div>
+  </div>
+</div>
+
+<footer>Synced via timeapi.io · Data saved in browser on this device · Adelaide local time</footer>
+
+<script>
+// ================================================================
+// Data model
+// Storage schema:
+//   watches_v1  : [ { id, brand, model, nick } ]
+//   checks_v1   : { watchId: [ {ts, refTime, watchTime, diffSecs, cls} ] }
+//   tg_v1       : { watchId: { ts, rates:{DU,DD,CU,CD,CL,CR} } }
+// ================================================================
+var WATCHES_KEY = 'watches_v1';
+var CHECKS_KEY  = 'checks_v1';
+var TG_KEY      = 'tg_v1';
+
+function ls(key) { try { return JSON.parse(localStorage.getItem(key)); } catch(e) { return null; } }
+function lsSet(key, val) { localStorage.setItem(key, JSON.stringify(val)); }
+
+var watches  = ls(WATCHES_KEY) || [];
+var allChecks = ls(CHECKS_KEY) || {};
+var allTg    = ls(TG_KEY) || {};
+
+var activeWatchId = null;
+
+function activeChecks() { return allChecks[activeWatchId] || []; }
+function activeTg()     { return allTg[activeWatchId] || null; }
+
+function saveWatches()  { lsSet(WATCHES_KEY, watches); }
+function saveChecks()   { lsSet(CHECKS_KEY, allChecks); }
+function saveTg()       { lsSet(TG_KEY, allTg); }
+
+
+var modalWatchType = 'mechanical';
+
+function setWatchType(type) {
+  modalWatchType = type;
+  document.getElementById('typeMechanical').className = 'type-btn' + (type==='mechanical'?' active':'');
+  document.getElementById('typeQuartz').className = 'type-btn' + (type==='quartz'?' active':'');
+  document.getElementById('liftAngleField').style.display = type==='mechanical' ? 'block' : 'none';
+}
+
+function watchType(w) { return w && w.type ? w.type : 'mechanical'; }
+function liftAngle(w) { return w && w.liftAngle ? w.liftAngle : 52; }
+function trackingDays(w) { return watchType(w) === 'quartz' ? 30 : 7; }
+function rateLabel(ratePerDay, w) {
+  var spd = (ratePerDay>=0?'+':'')+ratePerDay.toFixed(2)+'s/d';
+  var spm = (ratePerDay>=0?'+':'')+(ratePerDay*30).toFixed(1)+'s/mo';
+  return spd + '  ·  ' + spm;
+}
+
+function watchById(id) { return watches.find(function(w){ return w.id === id; }); }
+function watchLabel(w) { var n = w.brand + ' ' + w.model; return w.nick ? n + ' (' + w.nick + ')' : n; }
+function watchLabelWithBadge(w) { var n = watchLabel(w); var t = watchType(w); return n + ' <span class="type-badge '+t+'">'+t+'</span>'; }
+function genId() { return 'w_' + Date.now() + '_' + Math.random().toString(36).slice(2,6); }
+
+// ================================================================
+// NTP sync
+// ================================================================
+var clockOffset = 0;
+
+async function syncTime() {
+  var dot = document.getElementById('syncDot');
+  var label = document.getElementById('syncLabel');
+  dot.className = 'sync-dot syncing';
+  label.textContent = 'Syncing...';
+  try {
+    var t0 = Date.now();
+    var res = await fetch('https://timeapi.io/api/time/current/zone?timeZone=Australia%2FAdelaide');
+    var t1 = Date.now();
+    if (!res.ok) throw new Error();
+    var data = await res.json();
+    var halfRtt = Math.round((t1-t0)/2);
+    clockOffset = new Date(data.dateTime).getTime() + halfRtt - t1;
+    dot.className = 'sync-dot';
+    dot.style.background = 'var(--green)';
+    label.textContent = 'Synced to timeapi.io \xb7 ' + halfRtt + 'ms latency \xb7 tap to re-sync';
+  } catch(e) {
+    dot.className = 'sync-dot error';
+    label.textContent = 'Sync failed \u2014 using device clock \xb7 tap to retry';
+    clockOffset = 0;
+  }
+}
+
+function pad(n) { return String(n).padStart(2,'0'); }
+
+function updateClock() {
+  var now = new Date(Date.now() + clockOffset);
+  var ms = now.getMilliseconds();
+  document.getElementById('clockDisplay').textContent = pad(now.getHours())+':'+pad(now.getMinutes())+':'+pad(now.getSeconds());
+  document.getElementById('dateDisplay').textContent = now.toLocaleDateString('en-AU',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+  document.getElementById('msFill').style.width = (ms/10)+'%';
+  document.getElementById('msLabel').textContent = String(ms).padStart(3,'0')+' ms';
+}
+
+setInterval(updateClock, 50);
+updateClock();
+syncTime();
+setInterval(syncTime, 5*60*1000);
+
+// ================================================================
+// Watch management
+// ================================================================
+var editingWatchId = null;
+
+function renderWatchSelect() {
+  var sel = document.getElementById('watchSelect');
+  sel.innerHTML = '<option value="">— Select a watch —</option>';
+  watches.forEach(function(w) {
+    var opt = document.createElement('option');
+    opt.value = w.id;
+    opt.textContent = watchLabel(w);
+    if (w.id === activeWatchId) opt.selected = true;
+    sel.appendChild(opt);
+  });
+}
+
+function selectWatch(id) {
+  activeWatchId = id || null;
+  var badge = document.getElementById('activeWatchBadge');
+  if (activeWatchId && watchById(activeWatchId)) {
+    var w = watchById(activeWatchId);
+    badge.style.display = 'flex';
+    document.getElementById('activeWatchName').textContent = watchLabel(w);
+    document.getElementById('tapBtn').querySelector('.tap-sub').textContent = 'Tap precisely when seconds hit :00';
+    document.getElementById('historyTitle').textContent = watchLabel(w) + ' \u2014 Rate Check Log';
+  } else {
+    badge.style.display = 'none';
+    document.getElementById('tapBtn').querySelector('.tap-sub').textContent = 'Select a watch above first';
+    document.getElementById('historyTitle').textContent = 'Rate Check Log';
+  }
+  resetTap();
+  renderHistory();
+  renderTracker();
+  renderTgResults();
+  // Hide/show TG card immediately based on watch type
+  var tgCard = document.getElementById('tgCard');
+  if (!activeWatchId || watchType(watchById(activeWatchId))==='quartz') {
+    tgCard.style.display = 'none';
+  } else {
+    tgCard.style.display = 'block';
+  }
+}
+
+function openAddWatch() {
+  editingWatchId = null;
+  document.getElementById('modalTitle').textContent = 'Add Watch';
+  document.getElementById('modalBrand').value = '';
+  document.getElementById('modalModel').value = '';
+  document.getElementById('modalNick').value = '';
+  document.getElementById('modalDeleteBtn').style.display = 'none';
+  modalWatchType = 'mechanical'; setWatchType('mechanical');
+  document.getElementById('modalLiftAngle').value = '52';
+  document.getElementById('watchModal').className = 'modal-overlay open';
+  document.getElementById('modalBrand').focus();
+}
+
+function openEditWatch() {
+  if (!activeWatchId) return;
+  var w = watchById(activeWatchId);
+  if (!w) return;
+  editingWatchId = activeWatchId;
+  document.getElementById('modalTitle').textContent = 'Edit Watch';
+  document.getElementById('modalBrand').value = w.brand;
+  document.getElementById('modalModel').value = w.model;
+  document.getElementById('modalNick').value = w.nick || '';
+  document.getElementById('modalDeleteBtn').style.display = 'block';
+  document.getElementById('watchModal').className = 'modal-overlay open';
+  document.getElementById('modalBrand').focus();
+}
+
+function closeWatchModal() {
+  document.getElementById('watchModal').className = 'modal-overlay';
+}
+
+function saveWatch() {
+  var brand = document.getElementById('modalBrand').value.trim();
+  var model = document.getElementById('modalModel').value.trim();
+  var nick  = document.getElementById('modalNick').value.trim();
+  if (!brand || !model) { alert('Please enter both Brand and Model.'); return; }
+
+  if (editingWatchId) {
+    var w = watchById(editingWatchId);
+    var la = parseInt(document.getElementById('modalLiftAngle').value) || 52;
+    if (w) { w.brand = brand; w.model = model; w.nick = nick; w.type = modalWatchType; w.liftAngle = la; }
+  } else {
+    var la2 = parseInt(document.getElementById('modalLiftAngle').value) || 52;
+    var newW = { id: genId(), brand: brand, model: model, nick: nick, type: modalWatchType, liftAngle: la2 };
+    watches.push(newW);
+    activeWatchId = newW.id;
+  }
+  saveWatches();
+  closeWatchModal();
+  renderWatchSelect();
+  selectWatch(activeWatchId);
+}
+
+function deleteWatch() {
+  if (!editingWatchId) return;
+  var w = watchById(editingWatchId);
+  if (!confirm('Delete ' + watchLabel(w) + '? All its data will be removed.')) return;
+  watches = watches.filter(function(x){ return x.id !== editingWatchId; });
+  delete allChecks[editingWatchId];
+  delete allTg[editingWatchId];
+  saveWatches(); saveChecks(); saveTg();
+  if (activeWatchId === editingWatchId) activeWatchId = null;
+  closeWatchModal();
+  renderWatchSelect();
+  selectWatch(null);
+}
+
+// Close modal on overlay click
+document.getElementById('watchModal').addEventListener('click', function(e) {
+  if (e.target === this) closeWatchModal();
+});
+
+// ================================================================
+// Tap logic
+// ================================================================
+var tapTime = null, selectedSecs = 0;
+
+function recordTap() {
+  if (!activeWatchId) { alert('Please select or add a watch first.'); return; }
+  tapTime = new Date(Date.now() + clockOffset);
+  var btn = document.getElementById('tapBtn');
+  var flash = document.getElementById('flash');
+  flash.classList.add('active');
+  setTimeout(function(){ flash.classList.remove('active'); }, 120);
+  btn.classList.add('tapped');
+  btn.querySelector('.tap-label').textContent = 'TAPPED!';
+  btn.querySelector('.tap-sub').textContent = 'Recorded at '+pad(tapTime.getHours())+':'+pad(tapTime.getMinutes())+':'+pad(tapTime.getSeconds())+'.'+String(tapTime.getMilliseconds()).padStart(3,'0');
+  document.getElementById('comparePanel').style.display = 'block';
+  document.getElementById('tappedAt').textContent = 'Internet time at tap: '+pad(tapTime.getHours())+':'+pad(tapTime.getMinutes())+':'+pad(tapTime.getSeconds());
+  document.getElementById('watchTimeInput').placeholder = 'e.g. '+pad(tapTime.getHours())+':'+pad(tapTime.getMinutes());
+  document.getElementById('watchTimeInput').focus();
+  document.querySelectorAll('.inst-step').forEach(function(s,i){ s.classList.toggle('active', i===2); });
+  selectedSecs = 0;
+  document.querySelectorAll('.sec-btn').forEach(function(b){ b.classList.remove('active'); });
+  document.getElementById('sec00').classList.add('active');
+}
+
+function selectSec(s) {
+  selectedSecs = s;
+  document.querySelectorAll('.sec-btn').forEach(function(b){ b.classList.remove('active'); });
+  document.getElementById('sec'+pad(s)).classList.add('active');
+}
+
+function formatWatchInput(el) {
+  var v = el.value.replace(/[^0-9]/g,'');
+  if (v.length > 4) v = v.slice(0,4);
+  var out = v.slice(0,2);
+  if (v.length >= 3) out += ':'+v.slice(2,4);
+  el.value = out;
+}
+
+function calculateDiff() {
+  if (!tapTime) { alert('Tap the button first.'); return; }
+  if (!activeWatchId) { alert('Please select a watch first.'); return; }
+  var raw = document.getElementById('watchTimeInput').value;
+  var parts = raw.split(':');
+  if (parts.length < 2 || !parts[0] || !parts[1]) { alert('Enter watch time as HH:MM.'); return; }
+  var wH = parseInt(parts[0])||0, wM = parseInt(parts[1])||0, wS = selectedSecs;
+  var refSecs = tapTime.getHours()*3600 + tapTime.getMinutes()*60 + tapTime.getSeconds();
+  var watchSecs = wH*3600 + wM*60 + wS;
+  var diff = watchSecs - refSecs;
+  if (diff > 43200) diff -= 86400;
+  if (diff < -43200) diff += 86400;
+  var watchStr = pad(wH)+':'+pad(wM)+':'+pad(wS);
+  var refStr = pad(tapTime.getHours())+':'+pad(tapTime.getMinutes())+':'+pad(tapTime.getSeconds());
+  var cls = diff===0?'good':diff>0?'fast':'slow';
+  var check = { ts: tapTime.toISOString(), refTime: refStr, watchTime: watchStr, diffSecs: diff, cls: cls };
+  if (!allChecks[activeWatchId]) allChecks[activeWatchId] = [];
+  allChecks[activeWatchId].unshift(check);
+  var cutoff = Date.now() - 90*86400000;
+  allChecks[activeWatchId] = allChecks[activeWatchId].filter(function(c){ return new Date(c.ts).getTime() > cutoff; });
+  saveChecks();
+  showResult(diff, watchStr, refStr);
+}
+
+function showResult(diffSecs, watchStr, refStr) {
+  var abs = Math.abs(diffSecs);
+  var cls = diffSecs===0?'good':diffSecs>0?'fast':'slow';
+  var verdict, diffLabel;
+  if (abs===0) { verdict='Perfect \u2014 your watch is exactly on time.'; diffLabel='\xb1 0s'; }
+  else if (diffSecs>0) { verdict='Watch is running FAST by '+fmtDiff(abs)+'.'; diffLabel='+'+fmtDiff(abs); }
+  else { verdict='Watch is running SLOW by '+fmtDiff(abs)+'.'; diffLabel='\u2212'+fmtDiff(abs); }
+  var checks = activeChecks();
+  var driftLine = '';
+  if (checks.length >= 2) {
+    var elapsed = (new Date(checks[0].ts) - new Date(checks[1].ts))/1000;
+    if (elapsed > 3600) {
+      var rate = ((checks[0].diffSecs - checks[1].diffSecs)/elapsed)*86400;
+      var wActive = watchById(activeWatchId);
+      driftLine = 'Drift rate vs last check: '+(rate>=0?'+':'')+rate.toFixed(2)+'s/day  |  '+(rate>=0?'+':'')+(rate*30).toFixed(1)+'s/month';
+    }
+  }
+  document.getElementById('resultDiff').textContent = diffLabel;
+  document.getElementById('resultDiff').className = 'result-diff '+cls;
+  document.getElementById('resultVerdict').textContent = verdict;
+  document.getElementById('resultMeta').textContent = 'Tap ref: '+refStr+'  |  Watch: '+watchStr+(driftLine?'\n'+driftLine:'');
+  document.getElementById('resultPanel').className = 'result-panel show';
+  renderHistory();
+  renderTracker();
+  renderTgResults();
+}
+
+function fmtDiff(s) {
+  if (s<60) return s+'s';
+  var m=Math.floor(s/60), r=s%60;
+  return r>0?m+'m '+r+'s':m+'m';
+}
+
+function resetTap() {
+  tapTime=null; selectedSecs=0;
+  var btn = document.getElementById('tapBtn');
+  btn.classList.remove('tapped');
+  btn.querySelector('.tap-label').textContent = 'TAP ON YOUR WATCH LANDMARK';
+  btn.querySelector('.tap-sub').textContent = activeWatchId ? 'Tap precisely when seconds hit :00' : 'Select a watch above first';
+  document.getElementById('comparePanel').style.display = 'none';
+  document.getElementById('resultPanel').className = 'result-panel';
+  document.getElementById('watchTimeInput').value = '';
+  document.querySelectorAll('.inst-step').forEach(function(s,i){ s.classList.toggle('active', i<2); });
+  document.querySelectorAll('.sec-btn').forEach(function(b){ b.classList.remove('active'); });
+  document.getElementById('sec00').classList.add('active');
+}
+
+// ================================================================
+// 7-day drift tracker
+// ================================================================
+function renderTracker() {
+  var card = document.getElementById('trackerCard');
+  if (!activeWatchId) { card.style.display='none'; return; }
+  var w = watchById(activeWatchId);
+  var days = trackingDays(w);
+  var isQuartz = watchType(w) === 'quartz';
+  var checks = activeChecks();
+  var period = checks.filter(function(c){ return new Date(c.ts).getTime() > Date.now()-days*86400000; });
+  if (period.length===0) { card.style.display='none'; return; }
+  card.style.display = 'block';
+  // Update title
+  document.getElementById('trackerTitle').textContent = days+'-Day Drift Tracker';
+  var diffs = period.map(function(c){ return c.diffSecs; });
+  var avg = diffs.reduce(function(a,b){ return a+b; },0)/diffs.length;
+  var avgCls = avg>0.5?'fast':avg<-0.5?'slow':'good';
+  var rateLbl='—', rateCls='neutral';
+  if (period.length>=2) {
+    var elapsed = (new Date(period[0].ts)-new Date(period[period.length-1].ts))/1000;
+    if (elapsed>3600) {
+      var rate = ((period[0].diffSecs-period[period.length-1].diffSecs)/elapsed)*86400;
+      rateCls = rate>0.5?'fast':rate<-0.5?'slow':'good';
+      // Always show both s/day and s/month
+      rateLbl = (rate>=0?'+':'')+rate.toFixed(2)+'s/d<br><span style="font-size:11px;opacity:0.8">'+(rate>=0?'+':'')+(rate*30).toFixed(1)+'s/mo</span>';
+    }
+  }
+  var avgLbl = (avg>=0?'+':'')+avg.toFixed(1)+'s<br><span style="font-size:10px;opacity:0.7">avg offset</span>';
+  document.getElementById('driftSummary').innerHTML =
+    mkStat(period.length+' checks', days+'d logs', 'neutral') +
+    '<div class="drift-stat"><div class="drift-stat-val '+avgCls+'" style="font-size:14px">'+(avg>=0?'+':'')+avg.toFixed(1)+'s</div><div class="drift-stat-label">avg offset</div></div>' +
+    '<div class="drift-stat"><div class="drift-stat-val '+rateCls+'" style="font-size:13px;line-height:1.3">'+rateLbl+'</div><div class="drift-stat-label">drift rate</div></div>';
+  drawChart(period);
+  document.getElementById('chartNote').textContent = period.length>=2
+    ? 'Trend across '+period.length+' readings over '+days+' days — red=fast, blue=slow'
+    : 'Log 2+ checks to see trend chart';
+}
+
+function mkStat(val,label,cls) {
+  return '<div class="drift-stat"><div class="drift-stat-val '+cls+'">'+val+'</div><div class="drift-stat-label">'+label+'</div></div>';
+}
+
+function drawChart(week) {
+  var wrap=document.getElementById('chartWrap'), canvas=document.getElementById('driftChart');
+  var dpr=window.devicePixelRatio||1, W=wrap.offsetWidth, H=160;
+  canvas.width=W*dpr; canvas.height=H*dpr; canvas.style.width=W+'px'; canvas.style.height=H+'px';
+  var ctx=canvas.getContext('2d'); ctx.scale(dpr,dpr); var w=W,h=H;
+  if (week.length<2) { ctx.font='12px DM Sans,sans-serif'; ctx.fillStyle='#6b7280'; ctx.textAlign='center'; ctx.fillText('Log 2+ checks to see trend chart',w/2,h/2); return; }
+  var pts=week.slice().reverse();
+  var diffs=pts.map(function(c){ return c.diffSecs; });
+  var maxAbs=Math.max.apply(null,diffs.map(Math.abs)); if(maxAbs<1)maxAbs=1;
+  var pL=38,pR=12,pT=16,pB=30,cw=w-pL-pR,ch=h-pT-pB;
+  function xOf(i){ return pL+(pts.length>1?(i/(pts.length-1))*cw:cw/2); }
+  function yOf(v){ return pT+ch/2-(v/maxAbs)*((ch/2)-4); }
+  ctx.strokeStyle='#1e2530'; ctx.lineWidth=1;
+  [-1,-0.5,0,0.5,1].forEach(function(f){ var y=pT+ch/2-f*(ch/2-4); ctx.beginPath(); ctx.moveTo(pL,y); ctx.lineTo(pL+cw,y); ctx.stroke(); });
+  ctx.strokeStyle='#2a3240'; ctx.lineWidth=1.5; var y0=pT+ch/2;
+  ctx.beginPath(); ctx.moveTo(pL,y0); ctx.lineTo(pL+cw,y0); ctx.stroke();
+  ctx.font='9px Share Tech Mono,monospace'; ctx.fillStyle='#6b7280'; ctx.textAlign='right';
+  ctx.fillText('+'+maxAbs+'s',pL-4,pT+10); ctx.fillText('0s',pL-4,y0+3); ctx.fillText('\u2212'+maxAbs+'s',pL-4,pT+ch);
+  ctx.beginPath(); pts.forEach(function(p,i){ var x=xOf(i),y=yOf(p.diffSecs); i===0?ctx.moveTo(x,y):ctx.lineTo(x,y); });
+  ctx.lineTo(xOf(pts.length-1),y0); ctx.lineTo(xOf(0),y0); ctx.closePath();
+  var grad=ctx.createLinearGradient(0,pT,0,pT+ch); grad.addColorStop(0,'rgba(200,169,110,0.15)'); grad.addColorStop(1,'rgba(200,169,110,0.01)');
+  ctx.fillStyle=grad; ctx.fill();
+  ctx.beginPath(); ctx.strokeStyle='#c8a96e'; ctx.lineWidth=2; ctx.lineJoin='round';
+  pts.forEach(function(p,i){ var x=xOf(i),y=yOf(p.diffSecs); i===0?ctx.moveTo(x,y):ctx.lineTo(x,y); }); ctx.stroke();
+  pts.forEach(function(p,i){ var x=xOf(i),y=yOf(p.diffSecs); var col=p.diffSecs>0?'#e05252':p.diffSecs<0?'#7ab8e0':'#52c0a0';
+    ctx.beginPath(); ctx.arc(x,y,4.5,0,Math.PI*2); ctx.fillStyle=col; ctx.fill(); ctx.strokeStyle='#0a0c0f'; ctx.lineWidth=1.5; ctx.stroke(); });
+  ctx.font='9px Share Tech Mono,monospace'; ctx.fillStyle='#6b7280'; ctx.textAlign='left';
+  ctx.fillText(shortDate(pts[0].ts),pL,h-4);
+  if (pts.length>1){ ctx.textAlign='right'; ctx.fillText(shortDate(pts[pts.length-1].ts),pL+cw,h-4); }
+}
+
+function shortDate(iso) {
+  var d=new Date(iso);
+  return d.toLocaleDateString('en-AU',{day:'numeric',month:'short'})+' '+pad(d.getHours())+':'+pad(d.getMinutes());
+}
+
+// ================================================================
+// Time Grapher
+// ================================================================
+var POSITIONS = [
+  {id:'DU',label:'Dial Up'},{id:'DD',label:'Dial Down'},
+  {id:'CU',label:'Crown Up'},{id:'CD',label:'Crown Down'},
+  {id:'CL',label:'Crown Left'},{id:'CR',label:'Crown Right'}
+];
+
+var tgSession = null;
+
+function startTgSession() {
+  if (!activeWatchId) { alert('Please select a watch first.'); return; }
+  if (tgSession && tgSession.timerInterval) clearInterval(tgSession.timerInterval);
+  tgSession = { posIdx:0, rates:{}, timerInterval:null, timerSecs:60, running:false };
+  POSITIONS.forEach(function(p){ tgSession.rates[p.id]=null; });
+  document.getElementById('tgResults').className = 'tg-results';
+  document.getElementById('tgSession').className = 'tg-session active';
+  document.getElementById('tgStartBtn').textContent = 'Cancel';
+  document.getElementById('tgStartBtn').className = 'tg-start-btn danger';
+  document.getElementById('tgStartBtn').onclick = cancelTgSession;
+  renderPosDots(); goToPosition(0);
+}
+
+function cancelTgSession() {
+  if (tgSession && tgSession.timerInterval) clearInterval(tgSession.timerInterval);
+  tgSession = null;
+  document.getElementById('tgSession').className = 'tg-session';
+  document.getElementById('tgStartBtn').textContent = 'Start Session';
+  document.getElementById('tgStartBtn').className = 'tg-start-btn';
+  document.getElementById('tgStartBtn').onclick = startTgSession;
+  if (activeTg()) renderTgResults();
+}
+
+function renderPosDots() {
+  document.getElementById('posDots').innerHTML = POSITIONS.map(function(p,i){
+    var cls='pos-dot';
+    if(i===tgSession.posIdx) cls+=' active';
+    else if(tgSession.rates[p.id]!==null) cls+=' done';
+    return '<div class="'+cls+'" title="'+p.label+'"></div>';
+  }).join('');
+}
+
+function goToPosition(idx) {
+  if (idx>=POSITIONS.length) { finishTgSession(); return; }
+  tgSession.posIdx=idx; tgSession.timerSecs=60; tgSession.running=false;
+  if (tgSession.timerInterval) clearInterval(tgSession.timerInterval);
+  var pos=POSITIONS[idx];
+  document.getElementById('posName').textContent = pos.label;
+  document.getElementById('posCount').textContent = (idx+1)+' of '+POSITIONS.length;
+  document.getElementById('timerNum').textContent = '60';
+  document.getElementById('timerHint').textContent = 'Place watch '+pos.label.toLowerCase()+', then start timer';
+  document.getElementById('timerStartBtn').textContent = 'Start Timer';
+  document.getElementById('timerStartBtn').className = 'timer-btn primary';
+  document.getElementById('rateEntry').style.display = 'none';
+  document.getElementById('rateInput').value = '';
+  var ring=document.getElementById('timerRingFill'); ring.className='timer-ring-fill'; ring.style.strokeDashoffset='0';
+  renderPosDots();
+}
+
+function timerAction() {
+  if (!tgSession.running) {
+    tgSession.running=true;
+    document.getElementById('timerStartBtn').textContent='Running...';
+    document.getElementById('timerStartBtn').className='timer-btn';
+    document.getElementById('timerHint').textContent='Timer running \u2014 watch the Time Grapher display';
+    var circ=301.6;
+    tgSession.timerInterval = setInterval(function(){
+      tgSession.timerSecs--;
+      var rem=tgSession.timerSecs;
+      document.getElementById('timerNum').textContent=rem;
+      document.getElementById('timerRingFill').style.strokeDashoffset=circ*(1-rem/60);
+      if (rem<=0) {
+        clearInterval(tgSession.timerInterval); tgSession.running=false;
+        document.getElementById('timerRingFill').className='timer-ring-fill done';
+        document.getElementById('timerHint').textContent='Time up! Read the Time Grapher and enter the rate below.';
+        document.getElementById('timerStartBtn').textContent='Restart Timer';
+        document.getElementById('timerStartBtn').className='timer-btn';
+        showRateEntry();
+      }
+    },1000);
+  } else {
+    clearInterval(tgSession.timerInterval);
+    goToPosition(tgSession.posIdx);
+  }
+}
+
+function showRateEntry() {
+  var pos=POSITIONS[tgSession.posIdx];
+  document.getElementById('rateEntry').style.display='block';
+  document.getElementById('rateEntryLabel').textContent=pos.label+' \u2014 enter Time Grapher reading';
+  document.getElementById('rateInput').focus();
+}
+
+function recordRate() {
+  var val=parseFloat(document.getElementById('rateInput').value);
+  if (isNaN(val)) { alert('Enter a number (e.g. +5.2 or -3.1)'); return; }
+  tgSession.rates[POSITIONS[tgSession.posIdx].id]=val;
+  goToPosition(tgSession.posIdx+1);
+}
+
+function skipPosition() {
+  var dots=document.getElementById('posDots').children;
+  if (dots[tgSession.posIdx]) dots[tgSession.posIdx].className='pos-dot skipped';
+  goToPosition(tgSession.posIdx+1);
+}
+
+function finishTgSession() {
+  if (tgSession.timerInterval) clearInterval(tgSession.timerInterval);
+  var recorded=POSITIONS.filter(function(p){ return tgSession.rates[p.id]!==null; });
+  if (recorded.length===0) { alert('No positions recorded. Session discarded.'); cancelTgSession(); return; }
+  allTg[activeWatchId] = { ts: new Date().toISOString(), rates: tgSession.rates };
+  saveTg();
+  tgSession=null;
+  document.getElementById('tgSession').className='tg-session';
+  document.getElementById('tgStartBtn').textContent='Start Session';
+  document.getElementById('tgStartBtn').className='tg-start-btn';
+  document.getElementById('tgStartBtn').onclick=startTgSession;
+  renderTgResults();
+}
+
+function renderTgResults() {
+  var saved=activeTg();
+  var tgCard=document.getElementById('tgCard');
+  if (!activeWatchId || watchType(watchById(activeWatchId))==='quartz') {
+    tgCard.style.display='none'; return;
+  }
+  tgCard.style.display='block';
+  if (!saved) { document.getElementById('tgResults').className='tg-results'; return; }
+  var rates=saved.rates;
+  var recorded=POSITIONS.filter(function(p){ return rates[p.id]!==null; });
+  var avg=recorded.map(function(p){ return rates[p.id]; }).reduce(function(a,b){ return a+b; },0)/recorded.length;
+  var avgCls=avg>0.5?'fast':avg<-0.5?'slow':'good';
+  document.getElementById('tgPosGrid').innerHTML = POSITIONS.map(function(p){
+    var v=rates[p.id];
+    if(v===null) return '<div class="pos-cell"><div class="pos-cell-name">'+p.id+'</div><div class="pos-cell-val skip">\u2014</div></div>';
+    var cls=v>0.5?'fast':v<-0.5?'slow':'good';
+    return '<div class="pos-cell"><div class="pos-cell-name">'+p.id+'</div><div class="pos-cell-val '+cls+'">'+(v>=0?'+':'')+v.toFixed(1)+'</div></div>';
+  }).join('');
+  var theoLabel=(avg>=0?'+':'')+avg.toFixed(1)+' s/d';
+  var realLabel='\u2014', realCls='neutral', deltaHtml='';
+  var week=activeChecks().filter(function(c){ return new Date(c.ts).getTime()>Date.now()-7*86400000; });
+  if (week.length>=2) {
+    var elapsed=(new Date(week[0].ts)-new Date(week[week.length-1].ts))/1000;
+    if (elapsed>3600) {
+      var rr=((week[0].diffSecs-week[week.length-1].diffSecs)/elapsed)*86400;
+      realCls=rr>0.5?'fast':rr<-0.5?'slow':'good';
+      realLabel=(rr>=0?'+':'')+rr.toFixed(1)+' s/d';
+      var delta=rr-avg;
+      deltaHtml='<div class="compare-delta">Real-world vs bench: <strong>'+(delta>=0?'+':'')+delta.toFixed(1)+' s/d</strong> '+(Math.abs(delta)<2?'\u2014 closely matched':Math.abs(delta)<5?'\u2014 slight variance':'\u2014 significant variance')+'</div>';
+    }
+  }
+  var sDate=new Date(saved.ts).toLocaleDateString('en-AU',{day:'numeric',month:'short',year:'2-digit'});
+  document.getElementById('tgCompareBanner').innerHTML =
+    '<div class="compare-banner-label">Bench vs Real-World \u2014 '+sDate+' \xb7 '+recorded.length+' positions</div>'+
+    '<div class="compare-row">'+
+      '<div class="compare-item"><div class="compare-val '+avgCls+'">'+theoLabel+'</div><div class="compare-lbl">Bench avg</div></div>'+
+      '<div class="compare-vs">vs</div>'+
+      '<div class="compare-item"><div class="compare-val '+realCls+'">'+realLabel+'</div><div class="compare-lbl">Real-world</div></div>'+
+    '</div>'+deltaHtml;
+  document.getElementById('tgResults').className='tg-results show';
+}
+
+// ================================================================
+// History
+// ================================================================
+function renderHistory() {
+  var list=document.getElementById('historyList');
+  if (!activeWatchId) { list.innerHTML='<div class="empty-state">Select or add a watch to begin</div>'; return; }
+  var checks=activeChecks();
+  if (checks.length===0) { list.innerHTML='<div class="empty-state">No rate checks logged for this watch yet</div>'; return; }
+  list.innerHTML=checks.slice(0,30).map(function(c){
+    var d=new Date(c.ts);
+    var ds=d.toLocaleDateString('en-AU',{day:'numeric',month:'short',year:'2-digit'})+' '+pad(d.getHours())+':'+pad(d.getMinutes());
+    var abs=Math.abs(c.diffSecs);
+    var lbl=abs===0?'\xb10s':(c.diffSecs>0?'+':'\u2212')+fmtDiff(abs);
+    return '<div class="history-item"><div><div class="hi-date">'+ds+'</div><div class="hi-watch">Watch: '+c.watchTime+' \xb7 Ref: '+c.refTime+'</div></div><div class="hi-diff '+c.cls+'">'+lbl+'</div></div>';
+  }).join('');
+}
+
+function clearWatchData() {
+  if (!activeWatchId) return;
+  var w=watchById(activeWatchId);
+  if (!confirm('Clear all check data for '+watchLabel(w)+'? This cannot be undone.')) return;
+  allChecks[activeWatchId]=[];
+  delete allTg[activeWatchId];
+  saveChecks(); saveTg();
+  resetTap();
+  renderHistory();
+  renderTracker();
+  renderTgResults();
+  // Hide/show TG card immediately based on watch type
+  var tgCard = document.getElementById('tgCard');
+  if (!activeWatchId || watchType(watchById(activeWatchId))==='quartz') {
+    tgCard.style.display = 'none';
+  } else {
+    tgCard.style.display = 'block';
+  }
+}
+
+
+
+// ================================================================
+// Isochronism Check
+// ================================================================
+var ISO_KEY = 'watch_iso_v1';
+var allIso = ls(ISO_KEY) || {};
+
+function saveIso() { lsSet(ISO_KEY, allIso); renderWatchHistory(); }
+function activeIso() { return activeWatchId ? allIso[activeWatchId] : null; }
+
+// In-progress session state — persisted to localStorage so 24hr gap is safe
+var ISO_PROG_KEY = 'watch_iso_prog_v1';
+function loadIsoProgress() {
+  try {
+    var p = JSON.parse(localStorage.getItem(ISO_PROG_KEY));
+    return p || { watchId: null, step1: null, pos: null, complete: false };
+  } catch(e) { return { watchId: null, step1: null, pos: null, complete: false }; }
+}
+function saveIsoProgress() { localStorage.setItem(ISO_PROG_KEY, JSON.stringify(isoInProgress)); }
+function clearIsoProgress() { localStorage.removeItem(ISO_PROG_KEY); isoInProgress = { watchId: null, step1: null, pos: null, complete: false }; }
+var isoInProgress = loadIsoProgress();
+
+function renderIsoCard() {
+  var card = document.getElementById('isoCard');
+  if (!activeWatchId || watchType(watchById(activeWatchId)) !== 'mechanical') {
+    card.style.display = 'none';
+    document.getElementById('tgCard').style.display = 'none';
+    return;
+  }
+  card.style.display = 'block';
+  // Update lift angle notes
+  var w = watchById(activeWatchId);
+  var la = liftAngle(w);
+  var laStr = la + '°';
+  var laEl1 = document.getElementById('tgLiftVal');
+  var laEl2 = document.getElementById('isoLiftVal');
+  if (laEl1) laEl1.textContent = laStr;
+  if (laEl2) laEl2.textContent = laStr;
+  var saved = activeIso();
+  // Restore in-progress state if exists
+  var prog = isoInProgress;
+  if (prog && prog.step1 && !prog.complete) {
+    document.getElementById('isoActive').style.display = 'block';
+    document.getElementById('isoResults').className = 'iso-results';
+    document.getElementById('isoWaitingPos').textContent = prog.pos;
+    document.getElementById('isoPos2Display').textContent = prog.pos;
+    document.getElementById('isoStep1Summary').textContent =
+      'Rate: ' + (prog.step1.rate>=0?'+':'') + prog.step1.rate.toFixed(1) + 's/d  ·  Amp: ' + prog.step1.amp + '°  ·  BE: ' + prog.step1.be.toFixed(1) + 'ms';
+    setIsoStep('isoStep3');
+    document.getElementById('isoStartBtn').textContent = 'Cancel';
+    document.getElementById('isoStartBtn').className = 'iso-start-btn danger';
+    document.getElementById('isoStartBtn').onclick = cancelIsoCheck;
+  } else if (saved && saved.complete) {
+    renderIsoResults(saved);
+  }
+}
+
+function startIsoCheck() {
+  if (!activeWatchId) { alert('Please select a watch first.'); return; }
+  // Reset state
+  clearIsoProgress();
+  isoInProgress.watchId = activeWatchId;
+  document.getElementById('isoActive').style.display = 'block';
+  document.getElementById('isoResults').className = 'iso-results';
+  document.getElementById('isoWindConfirm').checked = false;
+  document.getElementById('isoStep1Btn').style.opacity = '0.4';
+  document.getElementById('isoStep1Btn').style.pointerEvents = 'none';
+  ['isoRate1','isoAmp1','isoBe1','isoRate2','isoAmp2','isoBe2'].forEach(function(id){ document.getElementById(id).value = ''; });
+  document.getElementById('isoPos1').value = '';
+  // Show step 1
+  setIsoStep('isoStep1');
+  document.getElementById('isoStartBtn').textContent = 'Cancel';
+  document.getElementById('isoStartBtn').className = 'iso-start-btn danger';
+  document.getElementById('isoStartBtn').onclick = cancelIsoCheck;
+}
+
+function cancelIsoCheck() {
+  clearIsoProgress();
+  document.getElementById('isoActive').style.display = 'none';
+  document.getElementById('isoStartBtn').textContent = 'Start Check';
+  document.getElementById('isoStartBtn').className = 'iso-start-btn';
+  document.getElementById('isoStartBtn').onclick = startIsoCheck;
+  var saved = activeIso();
+  if (saved && saved.complete) renderIsoResults(saved);
+}
+
+function setIsoStep(stepId) {
+  ['isoStep1','isoStep2','isoStep3','isoStep4'].forEach(function(id){
+    document.getElementById(id).className = 'iso-step' + (id === stepId ? ' active' : '');
+  });
+}
+
+function isoWindCheck() {
+  var checked = document.getElementById('isoWindConfirm').checked;
+  var btn = document.getElementById('isoStep1Btn');
+  btn.style.opacity = checked ? '1' : '0.4';
+  btn.style.pointerEvents = checked ? 'auto' : 'none';
+}
+
+function goIsoStep2() {
+  setIsoStep('isoStep2');
+}
+
+function saveIsoStep1() {
+  var pos = document.getElementById('isoPos1').value;
+  var rate = parseFloat(document.getElementById('isoRate1').value);
+  var amp = parseFloat(document.getElementById('isoAmp1').value);
+  var be = parseFloat(document.getElementById('isoBe1').value);
+  if (!pos) { alert('Please select the watch position.'); return; }
+  if (isNaN(rate) || isNaN(amp) || isNaN(be)) { alert('Please enter all three readings.'); return; }
+  isoInProgress.pos = pos;
+  isoInProgress.step1 = { rate: rate, amp: amp, be: be, ts: new Date().toISOString() };
+  saveIsoProgress();
+  // Update waiting screen
+  document.getElementById('isoWaitingPos').textContent = pos;
+  document.getElementById('isoPos2Display').textContent = pos;
+  document.getElementById('isoStep1Summary').textContent =
+    'Rate: ' + (rate>=0?'+':'') + rate.toFixed(1) + 's/d  ·  Amp: ' + amp + '°  ·  BE: ' + be.toFixed(1) + 'ms';
+  setIsoStep('isoStep3');
+}
+
+function goIsoStep4() {
+  setIsoStep('isoStep4');
+}
+
+function saveIsoStep2() {
+  var rate2 = parseFloat(document.getElementById('isoRate2').value);
+  var amp2 = parseFloat(document.getElementById('isoAmp2').value);
+  var be2 = parseFloat(document.getElementById('isoBe2').value);
+  if (isNaN(rate2) || isNaN(amp2) || isNaN(be2)) { alert('Please enter all three readings.'); return; }
+
+  var saved = {
+    complete: true,
+    ts: new Date().toISOString(),
+    pos: isoInProgress.pos,
+    step1: isoInProgress.step1,
+    step2: { rate: rate2, amp: amp2, be: be2, ts: new Date().toISOString() }
+  };
+  allIso[activeWatchId] = saved;
+  saveIso();
+  clearIsoProgress();
+
+  document.getElementById('isoActive').style.display = 'none';
+  document.getElementById('isoStartBtn').textContent = 'Start Check';
+  document.getElementById('isoStartBtn').className = 'iso-start-btn';
+  document.getElementById('isoStartBtn').onclick = startIsoCheck;
+  renderIsoResults(saved);
+}
+
+function renderIsoResults(saved) {
+  var s1 = saved.step1, s2 = saved.step2;
+  var rateDiff = s2.rate - s1.rate;
+  var ampDrop = s1.amp - s2.amp;
+  var date = new Date(saved.ts).toLocaleDateString('en-AU',{day:'numeric',month:'short',year:'2-digit'});
+
+  // Result grid
+  document.getElementById('isoResultGrid').innerHTML =
+    isoCol('Full Wind (30–60 min)', s1, saved.pos) +
+    isoCol('24-Hour Rest', s2, saved.pos);
+
+  // ---- Isochronism (rate) verdict ----
+  var absRateDiff = Math.abs(rateDiff);
+  var isoCls, isoTitle, isoText;
+  if (absRateDiff <= 5) {
+    isoCls = 'good'; isoTitle = 'Excellent Isochronism';
+    isoText = 'Rate difference of ' + fmtRateDiff(rateDiff) + ' over 24 hours. The mainspring is delivering consistent power throughout its wind-down cycle.';
+  } else if (absRateDiff <= 15) {
+    isoCls = 'warn'; isoTitle = 'Acceptable Isochronism';
+    isoText = 'Rate difference of ' + fmtRateDiff(rateDiff) + ' over 24 hours. Within acceptable range for most movements. Regulation or a service may tighten this further.';
+  } else {
+    isoCls = 'poor'; isoTitle = 'Poor Isochronism';
+    isoText = 'Rate difference of ' + fmtRateDiff(rateDiff) + ' over 24 hours. This variance suggests the movement may need service, new lubrication, or mainspring replacement.';
+  }
+
+  // ---- Amplitude recommendations ----
+  var recs = [];
+
+  // Full wind amplitude check
+  var amp1 = s1.amp;
+  if (amp1 >= 270 && amp1 <= 315) {
+    recs.push(makeRec('good', '?', 'Full Wind Amplitude: Excellent (' + amp1 + '°)',
+      'Reading of ' + amp1 + '° is within the ideal range of 270–315°. The movement is receiving strong, consistent power from the mainspring.'));
+  } else if (amp1 >= 250 && amp1 < 270) {
+    recs.push(makeRec('warn', '?', 'Full Wind Amplitude: Acceptable (' + amp1 + '°)',
+      'Reading of ' + amp1 + '° is slightly below the ideal 270–315° range. The movement is functional but may benefit from a service to restore optimal amplitude.'));
+  } else if (amp1 > 315) {
+    recs.push(makeRec('warn', '?', 'Full Wind Amplitude: High (' + amp1 + '°)',
+      'Reading of ' + amp1 + '° exceeds 315°. This may indicate excessive lubrication which can damage the pallet fork over time. Also confirm the lift angle setting on your Time Grapher is correct.'));
+  } else if (amp1 < 250 && amp1 >= 200) {
+    recs.push(makeRec('poor', '?', 'Full Wind Amplitude: Low (' + amp1 + '°)',
+      'Reading of ' + amp1 + '° is below 250°. This indicates the movement may have friction issues, dried lubrication, or a problem in the gear train. Service is recommended.'));
+  } else if (amp1 < 200) {
+    recs.push(makeRec('poor', '?', 'Full Wind Amplitude: Very Low (' + amp1 + '°)',
+      'Reading of ' + amp1 + '° is critically low. The movement likely needs immediate servicing — lubrication failure, worn parts, or obstruction in the gear train.'));
+  }
+
+  // 24hr amplitude drop check
+  var amp2 = s2.amp;
+  if (ampDrop > 60) {
+    recs.push(makeRec('poor', '?', '24-Hour Amplitude Drop: Severe (' + ampDrop.toFixed(0) + '° drop)',
+      'Dropping ' + ampDrop.toFixed(0) + '° over 24 hours indicates significant power delivery problems. The mainspring may be weak, worn, or lubrication may be failing.'));
+  } else if (ampDrop > 30) {
+    recs.push(makeRec('warn', '?', '24-Hour Amplitude Drop: Significant (' + ampDrop.toFixed(0) + '° drop)',
+      'Dropping ' + ampDrop.toFixed(0) + '° over 24 hours is above the normal range. Consider a service if combined with poor timekeeping.'));
+  } else {
+    recs.push(makeRec('good', '?', '24-Hour Amplitude Drop: Normal (' + ampDrop.toFixed(0) + '° drop)',
+      'A drop of ' + ampDrop.toFixed(0) + '° over 24 hours is expected as the mainspring winds down. This is within normal range.'));
+  }
+
+  // ---- Beat error recommendations ----
+  // Check both step1 and step2 beat error
+  var beChecks = [
+    { label: 'Full Wind', val: s1.be },
+    { label: '24-Hour', val: s2.be }
+  ];
+  beChecks.forEach(function(bec) {
+    var be = bec.val;
+    if (be <= 0.3) {
+      recs.push(makeRec('good', '?', bec.label + ' Beat Error: Excellent (' + be.toFixed(1) + 'ms)',
+        'Beat error of ' + be.toFixed(1) + 'ms is excellent. The balance wheel is running symmetrically with minimal variance between tick and tock.'));
+    } else if (be <= 0.5) {
+      recs.push(makeRec('good', '?', bec.label + ' Beat Error: Good (' + be.toFixed(1) + 'ms)',
+        'Beat error of ' + be.toFixed(1) + 'ms is within the acceptable range for a modern movement. No action needed.'));
+    } else if (be <= 1.0) {
+      recs.push(makeRec('warn', '?', bec.label + ' Beat Error: Acceptable (' + be.toFixed(1) + 'ms)',
+        'Beat error of ' + be.toFixed(1) + 'ms is usable but not ideal. High beat error can increase positional rate variance. A watchmaker can correct this by adjusting the impulse pin / beat setting.'));
+    } else if (be <= 2.0) {
+      recs.push(makeRec('poor', '?', bec.label + ' Beat Error: High (' + be.toFixed(1) + 'ms)',
+        'Beat error of ' + be.toFixed(1) + 'ms is high and likely contributing to rate inconsistency across positions. Beat centering adjustment is recommended — this cannot be fixed by the rate regulator alone.'));
+    } else {
+      recs.push(makeRec('poor', '?', bec.label + ' Beat Error: Very High (' + be.toFixed(1) + 'ms)',
+        'Beat error of ' + be.toFixed(1) + 'ms indicates the balance wheel is significantly off-centre. Professional service required.'));
+    }
+  });
+
+  var recsHtml = '<div class="iso-recs">' + recs.join('') + '</div>';
+
+  document.getElementById('isoVerdict').className = 'iso-verdict ' + isoCls;
+  document.getElementById('isoVerdict').innerHTML =
+    '<div class="iso-verdict-title">' + isoTitle + '</div>' +
+    '<div class="iso-verdict-text">' + isoText + '</div>' +
+    '<div style="font-size:10px;color:var(--muted);margin-top:8px;font-family:Share Tech Mono,monospace">' +
+    'Checked: ' + date + ' · Position: ' + saved.pos + '</div>' +
+    recsHtml;
+
+  document.getElementById('isoResults').className = 'iso-results show';
+}
+
+function makeRec(cls, icon, title, text) {
+  return '<div class="iso-rec ' + cls + '">' +
+    '<div class="iso-rec-icon">' + icon + '</div>' +
+    '<div class="iso-rec-body"><div class="iso-rec-title">' + title + '</div><div class="iso-rec-text">' + text + '</div></div>' +
+    '</div>';
+}
+
+function isoCol(title, reading, pos) {
+  return '<div class="iso-result-col">' +
+    '<div class="iso-result-col-title">' + title + '</div>' +
+    '<div class="iso-reading-row"><span class="iso-reading-label">Rate</span><span class="iso-reading-val">' + (reading.rate>=0?'+':'') + reading.rate.toFixed(1) + ' s/d</span></div>' +
+    '<div class="iso-reading-row"><span class="iso-reading-label">Amplitude</span><span class="iso-reading-val">' + reading.amp + '°</span></div>' +
+    '<div class="iso-reading-row"><span class="iso-reading-label">Beat Error</span><span class="iso-reading-val">' + reading.be.toFixed(1) + ' ms</span></div>' +
+    '</div>';
+}
+
+function fmtRateDiff(d) {
+  return (d>=0?'+':'') + d.toFixed(1) + 's/day';
+}
+
+function dismissIsoResults() {
+  document.getElementById('isoResults').className = 'iso-results';
+  document.getElementById('isoActive').style.display = 'none';
+  document.getElementById('isoStartBtn').textContent = 'Start Check';
+  document.getElementById('isoStartBtn').className = 'iso-start-btn';
+  document.getElementById('isoStartBtn').onclick = startIsoCheck;
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// Hook into selectWatch and renderTgResults to show/hide iso card
+var _origSelectWatch = selectWatch;
+selectWatch = function(id) {
+  _origSelectWatch(id);
+  renderIsoCard();
+};
+
+// ================================================================
+// Watch History section
+// ================================================================
+function renderWatchHistory() {
+  var list = document.getElementById('whList');
+  if (watches.length === 0) {
+    list.innerHTML = '<div class="empty-state">No watches added yet</div>';
+    return;
+  }
+  list.innerHTML = watches.map(function(w) {
+    var wChecks = allChecks[w.id] || [];
+    var wTg = allTg[w.id] || null;
+    var wIso = allIso[w.id] || null;
+    var rateCount = wChecks.length;
+    var countParts = [];
+    if (rateCount > 0) countParts.push(rateCount + ' rate check' + (rateCount !== 1 ? 's' : ''));
+    if (wTg) countParts.push('TG session');
+    if (wIso && wIso.complete) countParts.push('ISO check');
+    var countLabel = countParts.length > 0 ? countParts.join(' · ') : 'No data yet';
+    var lastLabel = '';
+    if (wChecks.length > 0) {
+      var d = new Date(wChecks[0].ts);
+      lastLabel = 'Last rate check: ' + d.toLocaleDateString('en-AU',{day:'numeric',month:'short',year:'2-digit'});
+    } else if (wIso && wIso.complete) {
+      var d2 = new Date(wIso.ts);
+      lastLabel = 'ISO: ' + d2.toLocaleDateString('en-AU',{day:'numeric',month:'short',year:'2-digit'});
+    } else if (wTg) {
+      var d3 = new Date(wTg.ts);
+      lastLabel = 'TG: ' + d3.toLocaleDateString('en-AU',{day:'numeric',month:'short',year:'2-digit'});
+    }
+    var tgBadge = '';
+    return '<div class="wh-item" data-watchid="' + w.id + '">' +
+      '<div class="wh-item-left">' +
+        '<div class="wh-item-brand">' + w.brand + '</div>' +
+        '<div class="wh-item-model">' + w.model + (w.nick ? ' <span class="wh-item-nick">(' + w.nick + ')</span>' : '') + ' <span class="type-badge '+watchType(w)+'">'+watchType(w)+'</span></div>' +
+      '</div>' +
+      '<div class="wh-item-stats">' +
+        '<div class="wh-item-count">' + countLabel + tgBadge + '</div>' +
+        '<div class="wh-item-last">' + lastLabel + '</div>' +
+      '</div>' +
+      '<div class="wh-item-arrow">›</div>' +
+    '</div>';
+  }).join('');
+
+  // Event delegation to avoid quote conflicts in onclick attributes
+  list.querySelectorAll('.wh-item').forEach(function(el) {
+    el.addEventListener('click', function() {
+      openWatchDetail(this.getAttribute('data-watchid'));
+    });
+  });
+}
+
+function openWatchDetail(watchId) {
+  var w = watchById(watchId);
+  if (!w) return;
+  var wChecks = allChecks[watchId] || [];
+  var wTg = allTg[watchId] || null;
+
+  // Header
+  document.getElementById('wdBrand').textContent = w.brand;
+  document.getElementById('wdModel').textContent = w.model;
+  var nickEl = document.getElementById('wdNick');
+  nickEl.textContent = w.nick ? w.nick : '';
+  nickEl.style.display = w.nick ? 'block' : 'none';
+
+  // Drift summary stats
+  var now = Date.now();
+  var wDays = trackingDays(w);
+  var week = wChecks.filter(function(c){ return new Date(c.ts).getTime() > now - wDays*86400000; });
+  var wdStats = document.getElementById('wdStats');
+  if (week.length === 0) {
+    wdStats.innerHTML = '<div class="wd-stat" style="grid-column:1/-1;text-align:center"><div class="wd-stat-val neutral">—</div><div class="wd-stat-label">No checks in last 7 days</div></div>';
+  } else {
+    var diffs = week.map(function(c){ return c.diffSecs; });
+    var avg = diffs.reduce(function(a,b){ return a+b; },0)/diffs.length;
+    var avgCls = avg>0.5?'fast':avg<-0.5?'slow':'good';
+    var rateLabel = '—', rateCls = 'neutral';
+    if (week.length >= 2) {
+      var elapsed = (new Date(week[0].ts)-new Date(week[week.length-1].ts))/1000;
+      if (elapsed > 3600) {
+        var rate = ((week[0].diffSecs-week[week.length-1].diffSecs)/elapsed)*86400;
+        rateLabel = (rate>=0?'+':'')+rate.toFixed(1)+'s/d';
+        rateCls = rate>0.5?'fast':rate<-0.5?'slow':'good';
+      }
+    }
+    wdStats.innerHTML =
+      wdMkStat(week.length+' checks',wDays+'d logs','neutral') +
+      wdMkStat((avg>=0?'+':'')+avg.toFixed(0)+'s','avg offset',avgCls) +
+      wdMkStat(rateLabel,'drift rate',rateCls);
+  }
+
+  // Chart
+  document.getElementById('wdChartNote').textContent = week.length >= 2
+    ? 'Trend across '+week.length+' readings — red=fast, blue=slow'
+    : 'Log 2+ checks to see trend chart';
+  setTimeout(function(){ drawDetailChart(week); }, 50);
+
+  // Time Grapher
+  var tgSection = document.getElementById('wdTgSection');
+  if (wTg) {
+    tgSection.style.display = 'block';
+    var rates = wTg.rates;
+    var POSITIONS = [{id:'DU',label:'Dial Up'},{id:'DD',label:'Dial Down'},{id:'CU',label:'Crown Up'},{id:'CD',label:'Crown Down'},{id:'CL',label:'Crown Left'},{id:'CR',label:'Crown Right'}];
+    var recorded = POSITIONS.filter(function(p){ return rates[p.id] !== null; });
+    document.getElementById('wdPosGrid').innerHTML = POSITIONS.map(function(p){
+      var v = rates[p.id];
+      if (v===null) return '<div class="wd-pos-cell"><div class="wd-pos-name">'+p.id+'</div><div class="wd-pos-val skip">—</div></div>';
+      var cls = v>0.5?'fast':v<-0.5?'slow':'good';
+      return '<div class="wd-pos-cell"><div class="wd-pos-name">'+p.id+'</div><div class="wd-pos-val '+cls+'">'+(v>=0?'+':'')+v.toFixed(1)+'</div></div>';
+    }).join('');
+    if (recorded.length > 0) {
+      var avg2 = recorded.map(function(p){ return rates[p.id]; }).reduce(function(a,b){ return a+b; },0)/recorded.length;
+      var tgDate = new Date(wTg.ts).toLocaleDateString('en-AU',{day:'numeric',month:'short',year:'2-digit'});
+      document.getElementById('wdTgAvg').textContent = 'Session: '+tgDate+' · Avg: '+(avg2>=0?'+':'')+avg2.toFixed(1)+' s/d across '+recorded.length+' positions';
+    }
+  } else {
+    tgSection.style.display = 'none';
+  }
+
+  // Check log
+  var checkList = document.getElementById('wdCheckList');
+  if (wChecks.length === 0) {
+    checkList.innerHTML = '<div class="empty-state" style="border:none;padding:12px 0">No rate checks logged yet</div>';
+  } else {
+    checkList.innerHTML = wChecks.slice(0,50).map(function(c){
+      var d = new Date(c.ts);
+      var ds = d.toLocaleDateString('en-AU',{day:'numeric',month:'short',year:'2-digit'})+' '+pad(d.getHours())+':'+pad(d.getMinutes());
+      var abs = Math.abs(c.diffSecs);
+      var lbl = abs===0?'±0s':(c.diffSecs>0?'+':'?')+fmtDiff(abs);
+      return '<div class="wd-check-item">' +
+        '<div><div class="wd-check-date">'+ds+'</div><div class="wd-check-times">Watch: '+c.watchTime+' · Ref: '+c.refTime+'</div></div>' +
+        '<div class="wd-check-diff '+c.cls+'">'+lbl+'</div>' +
+      '</div>';
+    }).join('');
+  }
+
+
+  // Isochronism
+  var wIso = allIso[watchId] || null;
+  var isoSection = document.getElementById('wdIsoSection');
+  if (wIso && wIso.complete) {
+    isoSection.style.display = 'block';
+    var rd = wIso.step2.rate - wIso.step1.rate;
+    var isoDate = new Date(wIso.ts).toLocaleDateString('en-AU',{day:'numeric',month:'short',year:'2-digit'});
+    var isoCls = Math.abs(rd)<=5?'good':Math.abs(rd)<=15?'warn':'poor';
+    document.getElementById('wdIsoContent').innerHTML =
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">' +
+        isoCol('Full Wind', wIso.step1, wIso.pos) +
+        isoCol('24 Hours', wIso.step2, wIso.pos) +
+      '</div>' +
+      '<div style="font-size:11px;font-family:Share Tech Mono,monospace;padding:8px 10px;background:var(--bg);border:1px solid var(--border);border-radius:7px">' +
+        'Isochronal error: <strong style="color:' + (Math.abs(rd)<=5?'var(--green)':Math.abs(rd)<=15?'var(--accent)':'var(--red)') + '">' + fmtRateDiff(rd) + '</strong>' +
+        '  ·  Amp drop: ' + (wIso.step1.amp - wIso.step2.amp).toFixed(0) + '°' +
+        '  ·  ' + isoDate +
+      '</div>';
+  } else {
+    isoSection.style.display = 'none';
+  }
+
+  document.getElementById('wdOverlay').className = 'wd-overlay open';
+}
+
+function closeWatchDetail() {
+  document.getElementById('wdOverlay').className = 'wd-overlay';
+}
+
+document.getElementById('wdOverlay').addEventListener('click', function(e){
+  if (e.target === this) closeWatchDetail();
+});
+
+function wdMkStat(val, label, cls) {
+  return '<div class="wd-stat"><div class="wd-stat-val '+cls+'">'+val+'</div><div class="wd-stat-label">'+label+'</div></div>';
+}
+
+function drawDetailChart(week) {
+  var wrap = document.getElementById('wdChartWrap');
+  var canvas = document.getElementById('wdChart');
+  var dpr = window.devicePixelRatio||1;
+  var W = wrap.offsetWidth, H = 140;
+  canvas.width = W*dpr; canvas.height = H*dpr;
+  canvas.style.width = W+'px'; canvas.style.height = H+'px';
+  var ctx = canvas.getContext('2d'); ctx.scale(dpr,dpr);
+  var w=W, h=H;
+
+  if (week.length < 2) {
+    ctx.font='11px DM Sans,sans-serif'; ctx.fillStyle='#6b7280'; ctx.textAlign='center';
+    ctx.fillText(week.length===0?'No checks logged':'Log 2+ checks to see chart', w/2, h/2);
+    return;
+  }
+
+  var pts = week.slice().reverse();
+  var diffs = pts.map(function(c){ return c.diffSecs; });
+  var maxAbs = Math.max.apply(null, diffs.map(Math.abs)); if(maxAbs<1)maxAbs=1;
+  var pL=36,pR=10,pT=14,pB=26,cw=w-pL-pR,ch=h-pT-pB;
+  function xOf(i){ return pL+(pts.length>1?(i/(pts.length-1))*cw:cw/2); }
+  function yOf(v){ return pT+ch/2-(v/maxAbs)*((ch/2)-4); }
+
+  ctx.strokeStyle='#1e2530'; ctx.lineWidth=1;
+  [-1,0,1].forEach(function(f){ var y=pT+ch/2-f*(ch/2-4); ctx.beginPath(); ctx.moveTo(pL,y); ctx.lineTo(pL+cw,y); ctx.stroke(); });
+  ctx.strokeStyle='#2a3240'; ctx.lineWidth=1.5;
+  var y0=pT+ch/2; ctx.beginPath(); ctx.moveTo(pL,y0); ctx.lineTo(pL+cw,y0); ctx.stroke();
+
+  ctx.font='9px Share Tech Mono,monospace'; ctx.fillStyle='#6b7280'; ctx.textAlign='right';
+  ctx.fillText('+'+maxAbs+'s',pL-4,pT+9); ctx.fillText('0s',pL-4,y0+3); ctx.fillText('?'+maxAbs+'s',pL-4,pT+ch);
+
+  ctx.beginPath();
+  pts.forEach(function(p,i){ var x=xOf(i),y=yOf(p.diffSecs); i===0?ctx.moveTo(x,y):ctx.lineTo(x,y); });
+  ctx.lineTo(xOf(pts.length-1),y0); ctx.lineTo(xOf(0),y0); ctx.closePath();
+  var grad=ctx.createLinearGradient(0,pT,0,pT+ch); grad.addColorStop(0,'rgba(200,169,110,0.14)'); grad.addColorStop(1,'rgba(200,169,110,0.01)');
+  ctx.fillStyle=grad; ctx.fill();
+
+  ctx.beginPath(); ctx.strokeStyle='#c8a96e'; ctx.lineWidth=2; ctx.lineJoin='round';
+  pts.forEach(function(p,i){ var x=xOf(i),y=yOf(p.diffSecs); i===0?ctx.moveTo(x,y):ctx.lineTo(x,y); }); ctx.stroke();
+
+  pts.forEach(function(p,i){
+    var x=xOf(i),y=yOf(p.diffSecs);
+    var col=p.diffSecs>0?'#e05252':p.diffSecs<0?'#7ab8e0':'#52c0a0';
+    ctx.beginPath(); ctx.arc(x,y,4,0,Math.PI*2); ctx.fillStyle=col; ctx.fill();
+    ctx.strokeStyle='#111418'; ctx.lineWidth=1.5; ctx.stroke();
+  });
+
+  ctx.font='9px Share Tech Mono,monospace'; ctx.fillStyle='#6b7280';
+  ctx.textAlign='left'; ctx.fillText(shortDate(pts[0].ts),pL,h-4);
+  ctx.textAlign='right'; ctx.fillText(shortDate(pts[pts.length-1].ts),pL+cw,h-4);
+}
+
+// Hook renderWatchHistory into saves so it stays current
+var _origSaveWatches = saveWatches;
+saveWatches = function(){ _origSaveWatches(); renderWatchHistory(); };
+var _origSaveChecks = saveChecks;
+saveChecks = function(){ _origSaveChecks(); renderWatchHistory(); };
+var _origSaveTg = saveTg;
+saveTg = function(){ _origSaveTg(); renderWatchHistory(); };
+
+// ================================================================
+// Init
+// ================================================================
+renderWatchSelect();
+renderWatchHistory();
+if (typeof renderIsoCard === 'function') renderIsoCard();
+if (watches.length > 0) {
+  // Auto-select first watch on load
+  activeWatchId = watches[0].id;
+  document.getElementById('watchSelect').value = activeWatchId;
+  selectWatch(activeWatchId);
+} else {
+  renderHistory();
+  renderTracker();
+}
+</script>
+</body>
+</html>
