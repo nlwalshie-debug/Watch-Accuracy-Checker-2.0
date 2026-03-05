@@ -25,7 +25,6 @@
   .btn:active { transform: scale(0.97); }
   .btn-vision { background:var(--blue); color:black; }
   
-  /* Vision UI Overlay */
   #vision-overlay {
     display:none; position:fixed; inset:0; background:black; z-index:9999;
     flex-direction:column; align-items:center; justify-content:center;
@@ -61,17 +60,14 @@
 
 <div id="vision-overlay">
   <video id="webcam" autoplay playsinline></video>
-  
   <div class="scanner-gui">
     <div class="scanner-line"></div>
     <p style="color:var(--blue); font-family:'Share Tech Mono'; position:absolute; top:-35px; font-size:0.8rem; letter-spacing:1px;">ALIGN DIGITAL TIME HERE</p>
   </div>
-
   <div class="controls">
     <button class="btn" style="background:#222; color:white;" onclick="stopVision()">CANCEL</button>
     <button id="snap-btn" class="btn" style="background:var(--green); color:black;" onclick="takeSnapshot()">CAPTURE TIME</button>
   </div>
-  
   <canvas id="hidden-canvas"></canvas>
 </div>
 
@@ -82,13 +78,12 @@ async function startVision() {
   const overlay = document.getElementById('vision-overlay');
   overlay.style.display = 'flex';
   try {
-    // requesting 1080p for better OCR detail
     stream = await navigator.mediaDevices.getUserMedia({ 
       video: { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 } } 
     });
     document.getElementById('webcam').srcObject = stream;
   } catch (err) {
-    alert("Camera Access Denied. Please check your browser settings.");
+    alert("Camera Access Denied. Use the HTTPS link from GitHub Pages.");
     stopVision();
   }
 }
@@ -103,17 +98,11 @@ async function takeSnapshot() {
   const canvas = document.getElementById('hidden-canvas');
   const btn = document.getElementById('snap-btn');
   const ctx = canvas.getContext('2d');
-  
-  // Capturing reference time at the instant of the click
   const atomicRef = new Date(); 
 
-  // Crop & Filter for G-Shock LCD
-  // We take the center 50% of the video to match our UI box
   canvas.width = 640;
   canvas.height = 320;
-  
   ctx.filter = "contrast(180%) grayscale(100%) brightness(105%)";
-  // Draw only the center part of the video onto the canvas for the AI
   ctx.drawImage(video, video.videoWidth/4, video.videoHeight/4, video.videoWidth/2, video.videoHeight/2, 0, 0, 640, 320);
   
   btn.innerText = "READING...";
@@ -138,7 +127,7 @@ async function takeSnapshot() {
       log.innerHTML = `SUCCESS: Read ${foundTime[0]}<br>Atomic Ref: ${atomicRef.toLocaleTimeString()}`;
       stopVision();
     } else {
-      alert("COULDN'T RESOLVE DIGITS\n\n1. Ensure watch is upright\n2. Minimize glare on the glass\n3. Try a different angle");
+      alert("COULDN'T READ DIGITS. Tip: Tilt watch to avoid glare!");
     }
   } catch (e) {
     alert("System Error: " + e.message);
